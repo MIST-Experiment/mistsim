@@ -18,4 +18,4 @@ This will install `mistsim` and its dependencies, including `croissant` and `jax
 The directory `examples` contains a Jupyter notebook that demonstrates how to use `mistsim` to simulate MIST observations.
 
 ## CROISSANT
-`croissant` is the engine of the `mistsim` package and performs the convolution of the sky with the MIST beam. The convolution is implemented in spherical harmonic space. See the [https://github.com/christianhbye/croissant](CROISSANT repository) for more details on the implementation and usage of `croissant`.
+`croissant` is the engine of the `mistsim` package and performs the convolution of the sky with the MIST beam. The convolution is implemented in spherical harmonic space. See the [CROISSANT repository](https://github.com/christianhbye/croissant) for more details on the implementation and usage of `croissant`.
