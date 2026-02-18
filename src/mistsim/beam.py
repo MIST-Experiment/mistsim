@@ -92,27 +92,6 @@ class Beam(eqx.Module):
         self.beam_az_rot = jnp.asarray(beam_az_rot)
         self.beam_tilt = jnp.asarray(beam_tilt)
 
-    @classmethod
-    def read_FEKO(cls, filename):
-        """
-        Read FEKO beam pattern from a file.
-
-        Parameters
-        ----------
-        filename : str or pathlib.Path
-            Path to the FEKO beam pattern file.
-
-        Returns
-        -------
-        Beam
-            A Beam object containing the data from the FEKO file.
-
-        """
-        # read file
-        # d = read...
-        # return cls(data, ...)
-        raise NotImplementedError
-
     def _compute_norm(self, use_horizon=True):
         """
         Compute the integral of the beam pattern over the sphere,
