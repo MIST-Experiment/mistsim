@@ -1,3 +1,4 @@
+from argparse import ArgumentParser
 import numpy as np
 import re
 import sys
@@ -173,10 +174,16 @@ def parse_feko_out(filepath, output_filepath=None):
     print(f"Gain shape: {gain_matrix.shape}")
 
 
-# Example Usage
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        parse_feko_out(sys.argv[1])
-    else:
-        print("Please provide the .out file path as an argument.")
-        # parse_feko_out("example.out")
+    parser = ArgumentParser(description="Parse Feko .out files to extract Far Field gain data.")
+    parser.add_argument("filepath", help="Path to the Feko .out file.")
+    parser.add_argument(
+        "-o",
+        "--output",
+        default=None,
+        help="Path to save the output .npz file. If not provided, saves with same name as input.",
+    )
+    args = parser.parse_args()
+    filepath = args.filepath
+    output_filepath = args.output
+    parse_feko_out(filepath, output_filepath=output_filepath)
