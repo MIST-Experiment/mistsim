@@ -146,28 +146,28 @@ class Simulator(eqx.Module):
         vis = vis_sky + vis_gnd
         return vis
 
+
 @jax.jit
 def correct_ground_loss(vis, fgnd, Tgnd):
     """
-     Correct for ground loss in the simulated visibilities.
+    Correct for ground loss in the simulated visibilities.
 
-     Parameters
-     ----------
-     vis : jax.Array
-        The simulated visibilities that include ground loss.
-     fgnd : jax.Array
-        The assumed ground fraction to use for the correction.
-     Tgnd : jax.Array
-        The assumed ground temperature to use for the correction 
+    Parameters
+    ----------
+    vis : jax.Array
+       The simulated visibilities that include ground loss.
+    fgnd : jax.Array
+       The assumed ground fraction to use for the correction.
+    Tgnd : jax.Array
+       The assumed ground temperature to use for the correction
 
-     Returns
-     -------
-     corrected_vis : jax.Array
-        The simulated visibilities with the ground loss corrected.
+    Returns
+    -------
+    corrected_vis : jax.Array
+       The simulated visibilities with the ground loss corrected.
 
     """
     fsky = 1 - fgnd
     corrected_vis = vis - fgnd * Tgnd
     corrected_vis /= fsky
     return corrected_vis
-
