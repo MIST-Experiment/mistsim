@@ -1,6 +1,7 @@
 from functools import partial
 
 import equinox as eqx
+import croissant.jax as crojax
 import jax
 import jax.numpy as jnp
 import s2fft
@@ -13,12 +14,20 @@ class Beam(eqx.Module):
     horizon: jax.Array  # boolean mask for above/below horizon
     beam_az_rot: jax.Array  # in degrees
     beam_tilt: jax.Array  # in degrees
-    lmax: jax.Array
+    _lmax: int = eqx.field(static=True)  # native lmax
+    _L: int = eqx.field(static=True)  # L = lmax + 1 for s2fft
+    lmax: int = eqx.field(static=True)  # desired lmax <= native lmax
     theta: jax.Array
     phi: jax.Array
 
     def __init__(
-        self, data, freqs, horizon=None, beam_az_rot=0.0, beam_tilt=0.0
+        self,
+        data,
+        freqs,
+        horizon=None,
+        lmax=None,
+        beam_az_rot=0.0,
+        beam_tilt=0.0,
     ):
         """
         Beam pattern object. Holds the beam pattern in local antenna
@@ -44,6 +53,12 @@ class Beam(eqx.Module):
             directions that are below the horizon.
             If None, it is assumed that the horizon is at
             theta = 90 degrees.
+        lmax : int
+            Maximum spherical harmonic degree to compute. If None, it
+            is inferred from the data shape and sampling scheme.
+            Note that this value cannot be greater than the natural
+            lmax of the data, which is N_theta - 2 for the mwss
+            sampling scheme (179 in most cases).
         beam_az_rot : float
             Angle between the X-axis of the beam (antenna local frame)
             and the local East direction, in degrees. The angle is
@@ -61,13 +76,23 @@ class Beam(eqx.Module):
 
         self.data = jnp.asarray(data)
         # assumed mwss sampling with 1 degree spacing in theta and phi
-        self.lmax = 179  # for 1 degree spacing, lmax = N_theta - 2
-        self.L = self.lmax + 1  # useful for s2fft
+        self._lmax = 179  # for 1 degree spacing, lmax = N_theta - 2
+        self._L = self._lmax + 1  # useful for s2fft
+        # if lmax is not provided, use the natural lmax of the data
+        if lmax is None:
+            self.lmax = self._lmax
+        elif lmax > self._lmax:
+            raise ValueError(
+                f"Requested lmax {lmax} exceeds natural lmax {self._lmax} "
+                "for the given data shape and sampling scheme."
+            )
+        else:
+            self.lmax = lmax
         self.theta = s2fft.sampling.s2_samples.thetas(
-            L=self.L, sampling="mwss"
+            L=self._L, sampling="mwss"
         )
         self.phi = s2fft.sampling.s2_samples.phis_equiang(
-            L=self.L, sampling="mwss"
+            L=self._L, sampling="mwss"
         )
         ntheta = self.theta.size
         nphi = self.phi.size
@@ -84,7 +109,7 @@ class Beam(eqx.Module):
 
         if horizon is None:
             horizon = self.theta <= 90.0
-            self.horizon = horizon[None, :]  # add phi axis
+            self.horizon = horizon[:, None]  # add phi axis
 
         else:
             self.horizon = jnp.asarray(horizon)
@@ -111,7 +136,7 @@ class Beam(eqx.Module):
             frequency.
 
         """
-        wgts = s2fft.utils.quadrature_jax.quad_weights_mwss(self.L)
+        wgts = s2fft.utils.quadrature_jax.quad_weights_mwss(self._L)
         if use_horizon:
             data = self.data * self.horizon[None]
         else:
@@ -173,13 +198,15 @@ class Beam(eqx.Module):
         data = self.data * self.horizon[None]  # mask out below-horizon part
         beam2alm = partial(
             s2fft.forward_jax,
-            L=self.L,
+            L=self._L,
             sampling="mwss",
             reality=True,
         )
         alm = jax.vmap(beam2alm)(data)
-        # now rotate by azimuth XXX
-        emms = jnp.arange(-self.lmax, self.lmax + 1)
+        emms = jnp.arange(-self._lmax, self._lmax + 1)
         phase = jnp.exp(-1j * emms * jnp.radians(self.beam_az_rot))
         alm = alm * phase[None, None, :]  # add freq/ell axes
+        # reduce lmax if desired
+        if self.lmax < self._lmax:
+            alm = crojax.alm.reduce_lmax(alm, self.lmax)
         return alm
