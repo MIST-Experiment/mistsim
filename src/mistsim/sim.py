@@ -1,7 +1,7 @@
 from functools import partial
 
 from astropy.coordinates import EarthLocation
-import crossant.jax as crojax
+import croissant.jax as crojax
 import equinox as eqx
 import jax
 import jax.numpy as jnp
