@@ -18,8 +18,10 @@ classifiers = [
 ]
 dependencies = [
   "croissant-sim==4.0.0",
+  "equinox",
   "jax",
   "numpy",
+  "s2fft",
 ]
 
 [project.optional-dependencies]
