@@ -17,7 +17,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Astronomy",
 ]
 dependencies = [
-  "croissant-sim==4.0.0",
+  "croissant-sim==4.1.0",
   "equinox",
   "jax",
   "numpy",
