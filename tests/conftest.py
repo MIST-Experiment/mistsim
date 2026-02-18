@@ -17,7 +17,8 @@ def pytest_configure(config):
     sys.modules["lunarsky.spice_utils"] = mock.MagicMock()
     sys.modules["lunarsky.moon"] = mock.MagicMock()
 
-    # Set environment variables to prevent astropy downloads
+    # Set environment variable to prevent astropy from blocking on
+    # download locks during parallel test execution
     os.environ["ASTROPY_DOWNLOAD_CACHE_LOCK_ATTEMPTS"] = "0"
 
 

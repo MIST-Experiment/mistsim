@@ -26,6 +26,11 @@ To run a specific test file:
 pytest tests/test_beam.py -v
 ```
 
+To run tests that require network access (coordinate transforms):
+```bash
+MISTSIM_RUN_NETWORK_TESTS=1 pytest tests/
+```
+
 ## Test Coverage
 
 Current coverage (as of last update):
@@ -36,11 +41,17 @@ Current coverage (as of last update):
 
 ## Skipped Tests
 
-Some tests are marked with `@requires_coords` and will be skipped in sandboxed environments without internet access. These tests require:
+Some tests are marked with `@requires_coords` and will be skipped by default in sandboxed environments without internet access. These tests require:
 - Astropy coordinate system transforms
 - SPICE kernel downloads from NASA servers
 
-In environments with internet connectivity, these tests will run successfully. To run them, ensure you have internet access and remove the `skipif` condition in `test_sim.py`.
+To enable these tests, set the environment variable:
+```bash
+export MISTSIM_RUN_NETWORK_TESTS=1
+pytest tests/
+```
+
+These tests will then run successfully if you have internet connectivity. If they fail due to network issues, they will be skipped automatically.
 
 ## Test Categories
 

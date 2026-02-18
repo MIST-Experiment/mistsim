@@ -1,5 +1,6 @@
 """Tests for the sim module."""
 
+import os
 import pytest
 import numpy as np
 import jax.numpy as jnp
@@ -10,8 +11,10 @@ from mistsim.sim import Simulator, correct_ground_loss
 # Mark tests that require full astropy coordinate transforms
 # These may fail in sandboxed environments without internet access
 # due to SPICE kernel download requirements
+# Set MISTSIM_RUN_NETWORK_TESTS=1 to enable these tests
+SKIP_NETWORK_TESTS = os.environ.get("MISTSIM_RUN_NETWORK_TESTS") != "1"
 requires_coords = pytest.mark.skipif(
-    True,  # Skip in sandboxed environment
+    SKIP_NETWORK_TESTS,
     reason="Requires astropy coordinate transforms with SPICE kernels",
 )
 
