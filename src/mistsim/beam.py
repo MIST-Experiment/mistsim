@@ -8,14 +8,14 @@ import s2fft
 
 class Beam(eqx.Module):
 
-    data : jax.Array
-    freqs : jax.Array  # in MHz
-    horizon : jax.Array  # boolean mask for above/below horizon
-    beam_az_rot : jax.Array  # in degrees
-    beam_tilt : jax.Array  # in degrees
-    lmax : jax.Array
-    theta : jax.Array
-    phi : jax.Array
+    data: jax.Array
+    freqs: jax.Array  # in MHz
+    horizon: jax.Array  # boolean mask for above/below horizon
+    beam_az_rot: jax.Array  # in degrees
+    beam_tilt: jax.Array  # in degrees
+    lmax: jax.Array
+    theta: jax.Array
+    phi: jax.Array
 
     def __init__(
         self, data, freqs, horizon=None, beam_az_rot=0.0, beam_tilt=0.0
@@ -31,7 +31,7 @@ class Beam(eqx.Module):
 
         Parameters
         ----------
-        data : array_like 
+        data : array_like
             Power beam pattern data, shape (N_freq, N_theta, N_phi),
             where N_theta = 181 and N_phi = 360.
         freqs : array_like
@@ -51,12 +51,14 @@ class Beam(eqx.Module):
             For example, if the X-axis of the beam points towards the
             local North direction, the `beam_az_rot` would be +90 deg.
         beam_tilt : float
-            Warning: not yet implemented.
             The tilt angle of the beam in degrees. The tilt is the
             angle measured from the local zenith towards the antenna
             pointing direction.
 
         """
+        if not jnp.isclose(beam_tilt, 0.0):
+            raise NotImplementedError("Beam tilt is not yet implemented.")
+
         self.data = jnp.asarray(data)
         # assumed mwss sampling with 1 degree spacing in theta and phi
         self.lmax = 179  # for 1 degree spacing, lmax = N_theta - 2
@@ -69,7 +71,7 @@ class Beam(eqx.Module):
         )
         ntheta = self.theta.size
         nphi = self.phi.size
-        
+
         self.freqs = jnp.atleast_1d(freqs)
         nfreq = self.freqs.size
 
@@ -83,17 +85,12 @@ class Beam(eqx.Module):
         if horizon is None:
             horizon = self.theta <= 90.0
             self.horizon = horizon[None, :]  # add phi axis
-        
+
         else:
             self.horizon = jnp.asarray(horizon)
-        
+
         self.beam_az_rot = jnp.asarray(beam_az_rot)
         self.beam_tilt = jnp.asarray(beam_tilt)
-
-        # XXX fix this
-        if beam_tilt != 0.0:
-            raise NotImplementedError("Beam tilt is not yet implemented.")
-
 
     @classmethod
     def read_FEKO(cls, filename):
@@ -125,7 +122,7 @@ class Beam(eqx.Module):
         ----------
         use_horizon : bool
             Whether to include only the part of the beam above the
-            horizon. 
+            horizon.
             If False, the entire beam pattern is integrated over.
 
         Returns
@@ -178,7 +175,6 @@ class Beam(eqx.Module):
         fgnd = 1.0 - norm_above_horizon / norm_total
         return fgnd
 
-
     @jax.jit
     def compute_alm(self):
         """
@@ -204,6 +200,7 @@ class Beam(eqx.Module):
         )
         alm = jax.vmap(beam2alm)(data)
         # now rotate by azimuth XXX
-        if self.beam_az_rot != 0.0:
-            raise NotImplementedError("Beam azimuth rotation is not yet implemented.")
+        emms = jnp.arange(-self.lmax, self.lmax + 1)
+        phase = jnp.exp(-1j * emms * jnp.radians(self.beam_az_rot))
+        alm = alm * phase[None, None, :]  # add freq/ell axes
         return alm
