@@ -1,8 +1,5 @@
 """Tests for the utils module."""
 
-import pytest
-import jax.numpy as jnp
-
 from mistsim.utils import get_lmax
 
 
@@ -51,7 +48,7 @@ class TestGetLmax:
         shape1 = (lmax + 1, 2 * lmax + 1)
         shape2 = (5, lmax + 1, 2 * lmax + 1)
         shape3 = (2, 3, lmax + 1, 2 * lmax + 1)
-        
+
         assert get_lmax(shape1) == lmax
         assert get_lmax(shape2) == lmax
         assert get_lmax(shape3) == lmax

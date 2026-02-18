@@ -13,12 +13,12 @@ def pytest_configure(config):
     # This prevents network calls during import
     mock_lunarsky = mock.MagicMock()
     mock_lunarsky.MoonLocation = mock.MagicMock()
-    sys.modules['lunarsky'] = mock_lunarsky
-    sys.modules['lunarsky.spice_utils'] = mock.MagicMock()
-    sys.modules['lunarsky.moon'] = mock.MagicMock()
-    
+    sys.modules["lunarsky"] = mock_lunarsky
+    sys.modules["lunarsky.spice_utils"] = mock.MagicMock()
+    sys.modules["lunarsky.moon"] = mock.MagicMock()
+
     # Set environment variables to prevent astropy downloads
-    os.environ['ASTROPY_DOWNLOAD_CACHE_LOCK_ATTEMPTS'] = '0'
+    os.environ["ASTROPY_DOWNLOAD_CACHE_LOCK_ATTEMPTS"] = "0"
 
 
 @pytest.fixture(scope="session")
@@ -44,7 +44,7 @@ def sample_times():
 def sample_location():
     """Standard observer location for testing (Berkeley, CA)."""
     return {
-        'lon': -122.2585,
-        'lat': 37.8719,
-        'alt': 100.0,
+        "lon": -122.2585,
+        "lat": 37.8719,
+        "alt": 100.0,
     }

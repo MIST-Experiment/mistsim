@@ -3,7 +3,6 @@
 import pytest
 import numpy as np
 import jax.numpy as jnp
-import s2fft
 
 from mistsim.beam import Beam
 
@@ -26,7 +25,7 @@ class TestBeamInitialization:
         """Test basic beam initialization with valid data."""
         data, freqs = valid_beam_data
         beam = Beam(data=data, freqs=freqs)
-        
+
         assert beam.data.shape == data.shape
         assert jnp.allclose(beam.freqs, freqs)
         assert beam._lmax == 179
@@ -38,7 +37,7 @@ class TestBeamInitialization:
         data, freqs = valid_beam_data
         lmax = 50
         beam = Beam(data=data, freqs=freqs, lmax=lmax)
-        
+
         assert beam.lmax == lmax
         assert beam._lmax == 179  # native lmax unchanged
 
@@ -55,7 +54,7 @@ class TestBeamInitialization:
         nphi = 360
         horizon = np.ones((ntheta, nphi), dtype=bool)
         horizon[100:, :] = False  # Below theta=100 is below horizon
-        
+
         beam = Beam(data=data, freqs=freqs, horizon=horizon)
         assert beam.horizon.shape == (ntheta, nphi)
         assert jnp.all(beam.horizon[:100])
@@ -65,7 +64,7 @@ class TestBeamInitialization:
         """Test that default horizon is at theta=90 degrees."""
         data, freqs = valid_beam_data
         beam = Beam(data=data, freqs=freqs)
-        
+
         # Default horizon should be theta <= 90
         expected_horizon = beam.theta <= 90.0
         assert beam.horizon.shape == (181, 1)  # theta, 1
@@ -75,7 +74,7 @@ class TestBeamInitialization:
         """Test that wrong data shape raises ValueError."""
         data = np.ones((3, 100, 200))  # Wrong shape
         freqs = np.array([50.0, 100.0, 150.0])
-        
+
         with pytest.raises(ValueError, match="does not match expected shape"):
             Beam(data=data, freqs=freqs)
 
@@ -85,7 +84,7 @@ class TestBeamInitialization:
         nphi = 360
         data = np.ones((1, ntheta, nphi))
         freqs = np.array([100.0])
-        
+
         beam = Beam(data=data, freqs=freqs)
         assert beam.data.shape == (1, ntheta, nphi)
         assert beam.freqs.shape == (1,)
@@ -96,7 +95,7 @@ class TestBeamInitialization:
         nphi = 360
         data = np.ones((1, ntheta, nphi))
         freqs = 100.0  # scalar
-        
+
         beam = Beam(data=data, freqs=freqs)
         assert beam.freqs.shape == (1,)
         assert jnp.isclose(beam.freqs[0], 100.0)
@@ -104,7 +103,9 @@ class TestBeamInitialization:
     def test_beam_tilt_not_implemented(self, valid_beam_data):
         """Test that non-zero beam_tilt raises NotImplementedError."""
         data, freqs = valid_beam_data
-        with pytest.raises(NotImplementedError, match="Beam tilt is not yet implemented"):
+        with pytest.raises(
+            NotImplementedError, match="Beam tilt is not yet implemented"
+        ):
             Beam(data=data, freqs=freqs, beam_tilt=10.0)
 
     def test_beam_az_rot_zero(self, valid_beam_data):
@@ -137,7 +138,7 @@ class TestBeamMethods:
     def test_compute_norm(self, simple_beam):
         """Test compute_norm method."""
         norm = simple_beam.compute_norm()
-        
+
         # Should return one value per frequency
         assert norm.shape == (2,)
         # For uniform beam, norm should be 4π
@@ -146,7 +147,7 @@ class TestBeamMethods:
     def test_compute_fgnd(self, simple_beam):
         """Test compute_fgnd method."""
         fgnd = simple_beam.compute_fgnd()
-        
+
         # Should return one value per frequency
         assert fgnd.shape == (2,)
         # Ground fraction should be between 0 and 1
@@ -158,14 +159,14 @@ class TestBeamMethods:
         fgnd = simple_beam.compute_fgnd()
         norm_total = simple_beam._compute_norm(use_horizon=False)
         norm_above = simple_beam._compute_norm(use_horizon=True)
-        
+
         expected_fgnd = 1.0 - norm_above / norm_total
         assert jnp.allclose(fgnd, expected_fgnd)
 
     def test_compute_alm(self, simple_beam):
         """Test compute_alm method."""
         alm = simple_beam.compute_alm()
-        
+
         # Should have shape (nfreq, lmax+1, 2*lmax+1)
         expected_shape = (2, 180, 359)
         assert alm.shape == expected_shape
@@ -180,10 +181,10 @@ class TestBeamMethods:
         data = np.ones((nfreq, ntheta, nphi))
         freqs = np.array([100.0])
         lmax = 50
-        
+
         beam = Beam(data=data, freqs=freqs, lmax=lmax)
         alm = beam.compute_alm()
-        
+
         # Should have shape (nfreq, lmax+1, 2*lmax+1)
         expected_shape = (1, lmax + 1, 2 * lmax + 1)
         assert alm.shape == expected_shape
@@ -196,10 +197,10 @@ class TestBeamMethods:
         data = np.ones((nfreq, ntheta, nphi))
         freqs = np.array([100.0])
         beam_az_rot = 90.0
-        
+
         beam = Beam(data=data, freqs=freqs, beam_az_rot=beam_az_rot)
         alm = beam.compute_alm()
-        
+
         # alm should be computed and have correct shape
         assert alm.shape == (1, 180, 359)
         assert jnp.iscomplexobj(alm)
@@ -209,22 +210,22 @@ class TestBeamMethods:
         nfreq = 1
         ntheta = 181
         nphi = 360
-        
+
         # Create identical beam data
         data = np.ones((nfreq, ntheta, nphi))
         freqs = np.array([100.0])
-        
+
         # Create two different horizons
         horizon_all = np.ones((ntheta, nphi), dtype=bool)  # Everything visible
         horizon_half = np.ones((ntheta, nphi), dtype=bool)
         horizon_half[90:, :] = False  # Only upper hemisphere visible
-        
+
         beam_all = Beam(data=data, freqs=freqs, horizon=horizon_all)
         beam_half = Beam(data=data, freqs=freqs, horizon=horizon_half)
-        
+
         alm_all = beam_all.compute_alm()
         alm_half = beam_half.compute_alm()
-        
+
         # The two beams should have different alm because of different masking
         # They should NOT be close since one has half the sphere masked
         assert not jnp.allclose(alm_all, alm_half, rtol=1e-3)
@@ -241,13 +242,13 @@ class TestBeamMethods:
         nphi = 360
         data = np.random.rand(nfreq, ntheta, nphi)
         freqs = np.linspace(50, 250, nfreq)
-        
+
         beam = Beam(data=data, freqs=freqs)
-        
+
         norm = beam.compute_norm()
         fgnd = beam.compute_fgnd()
         alm = beam.compute_alm()
-        
+
         assert norm.shape == (nfreq,)
         assert fgnd.shape == (nfreq,)
         assert alm.shape == (nfreq, 180, 359)
