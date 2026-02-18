@@ -78,7 +78,7 @@ class Simulator(eqx.Module):
         self.sky_alm = sky_alm
         self.times_jd = times_jd
 
-        beam_lmax = utils.get_lmax(beam.alm)
+        beam_lmax = beam.lmax
         sky_lmax = utils.get_lmax(sky_alm)
         if beam_lmax != sky_lmax:
             raise ValueError("Beam and sky alm have different lmax values.")
@@ -108,13 +108,29 @@ class Simulator(eqx.Module):
             (Nfreqs, lmax+1, 2*lmax+1).
 
         """
+        beam_alm = self.beam.compute_alm()
         transform = partial(
             s2fft.utils.rotation.rotate_flms,
             L=self.lmax + 1,
             rotation=self.eul_topo,
             dl_array=self.dl_topo,
         )
-        return jax.vmap(transform)(self.beam.alm)
+        return jax.vmap(transform)(beam_alm)
+
+    @jax.jit
+    def compute_ground_contribution(self):
+        """
+        Compute the ground contribution to the visibility. This is
+        simply the beam response below the horizon multiplied by the ground
+        temperature.
+
+        Returns
+        -------
+        vis_gnd : jax.Array
+            The ground contribution to the visibility.
+
+        """
+        return self.beam.compute_fgnd() * self.T_gnd
 
     @jax.jit
     def sim(self):
@@ -122,8 +138,36 @@ class Simulator(eqx.Module):
         phases = crojax.simulator.rot_alm_z(
             self.lmax, self.times, world="earth"
         )
-        # this is the sky contribution
+        # this is the sky contribution, with implict ground loss
         vis_sky = crojax.simulator.convolve(beam_eq_alm, self.sky_alm, phases)
+        vis_sky /= self.beam.compute_norm()
         # add the ground contribution
-        vis = self.beam.fsky * vis_sky + self.beam.fgnd * self.T_gnd
+        vis_gnd = self.compute_ground_contribution()
+        vis = vis_sky + vis_gnd
         return vis
+
+@jax.jit
+def correct_ground_loss(vis, fgnd, Tgnd):
+    """
+     Correct for ground loss in the simulated visibilities.
+
+     Parameters
+     ----------
+     vis : jax.Array
+        The simulated visibilities that include ground loss.
+     fgnd : jax.Array
+        The assumed ground fraction to use for the correction.
+     Tgnd : jax.Array
+        The assumed ground temperature to use for the correction 
+
+     Returns
+     -------
+     corrected_vis : jax.Array
+        The simulated visibilities with the ground loss corrected.
+
+    """
+    fsky = 1 - fgnd
+    corrected_vis = vis - fgnd * Tgnd
+    corrected_vis /= fsky
+    return corrected_vis
+
