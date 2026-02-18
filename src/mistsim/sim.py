@@ -1,6 +1,7 @@
 from functools import partial
 
-from astropy.coordinates import EarthLocation
+from astropy.coordinates import AltAz, EarthLocation
+from astropy.time import Time
 import croissant.jax as crojax
 import equinox as eqx
 import jax
@@ -19,10 +20,11 @@ class Simulator(eqx.Module):
     lon: jax.Array  # longitude of in degrees
     lat: jax.Array  # latitude in degrees
     alt: jax.Array  # altitude in meters
-    lmax: jax.Array
-    eul_topo: jax.Array  # euler angles for topocentric to eq frame
+    lmax: int = eqx.field(static=True)
+    L: int = eqx.field(static=True)
+    eul_topo: tuple = eqx.field(static=True)  # euler angles for topocentric to eq frame
     dl_topo: jax.Array  # dl array for topocentric to eq frame
-    T_gnd: jax.Array  # ground temperature in K
+    Tgnd: jax.Array  # ground temperature in K
 
     def __init__(
         self,
@@ -33,7 +35,7 @@ class Simulator(eqx.Module):
         lon,
         lat,
         alt=0,
-        T_gnd=300.0,
+        Tgnd=300.0,
     ):
         """
         Configure a simulation. This class holds all the relevant
@@ -66,7 +68,7 @@ class Simulator(eqx.Module):
             The latitude of the observer in degrees.
         alt : float
             The altitude of the observer in meters.
-        T_gnd : float
+        Tgnd : float
             The ground temperature in Kelvin. Only a constant
             temperature is supported for now.
 
@@ -79,20 +81,25 @@ class Simulator(eqx.Module):
         self.times_jd = times_jd
 
         beam_lmax = beam.lmax
-        sky_lmax = utils.get_lmax(sky_alm)
+        sky_lmax = utils.get_lmax(sky_alm.shape)
         if beam_lmax != sky_lmax:
             raise ValueError("Beam and sky alm have different lmax values.")
-        self.lmax = jnp.array(beam_lmax)
+        self.lmax = beam_lmax
+        self.L = self.lmax + 1
 
-        self.T_gnd = jnp.array(T_gnd)
+        self.Tgnd = jnp.array(Tgnd)
 
         self.lon = jnp.array(lon)
         self.lat = jnp.array(lat)
         self.alt = jnp.array(alt)
         loc = EarthLocation.from_geodetic(lon, lat, height=alt)
-        self.eul_topo, self.dl_topo = crojax.rotations.generate_euler_dl(
-            self.lmax, loc, "fk5"
+        t0 = Time(times_jd[0], format="jd")
+        topo = AltAz(location=loc, obstime=t0)
+        eul_topo, dl_topo = crojax.rotations.generate_euler_dl(
+            self.lmax, topo, "fk5"
         )
+        self.eul_topo = tuple(eul_topo)
+        self.dl_topo = jnp.array(dl_topo)
 
     @jax.jit
     def compute_beam_eq(self):
@@ -111,7 +118,7 @@ class Simulator(eqx.Module):
         beam_alm = self.beam.compute_alm()
         transform = partial(
             s2fft.utils.rotation.rotate_flms,
-            L=self.lmax + 1,
+            L=self.L,
             rotation=self.eul_topo,
             dl_array=self.dl_topo,
         )
@@ -130,13 +137,13 @@ class Simulator(eqx.Module):
             The ground contribution to the visibility.
 
         """
-        return self.beam.compute_fgnd() * self.T_gnd
+        return self.beam.compute_fgnd() * self.Tgnd
 
     @jax.jit
     def sim(self):
         beam_eq_alm = self.compute_beam_eq()
         phases = crojax.simulator.rot_alm_z(
-            self.lmax, self.times, world="earth"
+            self.lmax, times=self.times_jd, world="earth"
         )
         # this is the sky contribution, with implict ground loss
         vis_sky = crojax.simulator.convolve(beam_eq_alm, self.sky_alm, phases)
@@ -144,7 +151,7 @@ class Simulator(eqx.Module):
         # add the ground contribution
         vis_gnd = self.compute_ground_contribution()
         vis = vis_sky + vis_gnd
-        return vis
+        return vis.real
 
 
 @jax.jit
