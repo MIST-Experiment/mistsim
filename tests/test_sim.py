@@ -4,6 +4,7 @@ import os
 import pytest
 import numpy as np
 import jax.numpy as jnp
+import s2fft
 
 from mistsim.beam import Beam
 from mistsim.sim import Simulator, correct_ground_loss
@@ -28,8 +29,8 @@ class TestSimulatorInitialization:
         nfreq = 2
         ntheta = 181
         nphi = 360
-        data = np.ones((nfreq, ntheta, nphi))
-        freqs = np.array([50.0, 100.0])
+        data = jnp.ones((nfreq, ntheta, nphi))
+        freqs = jnp.array([50.0, 100.0])
         lmax = 50
         return Beam(data=data, freqs=freqs, lmax=lmax)
 
@@ -39,16 +40,17 @@ class TestSimulatorInitialization:
         # For lmax=50, shape is (nfreq, lmax+1, 2*lmax+1)
         nfreq = 2
         lmax = 50
-        sky_alm = np.random.randn(
-            nfreq, lmax + 1, 2 * lmax + 1
-        ) + 1j * np.random.randn(nfreq, lmax + 1, 2 * lmax + 1)
+        rng = np.random.default_rng(seed=42)
+        sky_alm = s2fft.utils.signal_generator.generate_flm(
+            rng, lmax+1, reality=True
+        )
         return jnp.array(sky_alm)
 
     @requires_coords
     def test_simulator_initialization_basic(self, valid_beam, valid_sky_alm):
         """Test basic simulator initialization."""
-        freqs = np.array([50.0, 100.0])
-        times_jd = np.array([2459000.0, 2459000.5])
+        freqs = jnp.array([50.0, 100.0])
+        times_jd = jnp.array([2459000.0, 2459000.5])
         lon = -122.0
         lat = 37.0
 
