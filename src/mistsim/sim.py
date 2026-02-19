@@ -98,7 +98,7 @@ class Simulator(eqx.Module):
         eul_topo, dl_topo = crojax.rotations.generate_euler_dl(
             self.lmax, topo, "fk5"
         )
-        self.eul_topo = tuple(eul_topo)
+        self.eul_topo = tuple(float(angle) for angle in eul_topo)
         self.dl_topo = jnp.array(dl_topo)
 
     @jax.jit
@@ -142,8 +142,9 @@ class Simulator(eqx.Module):
     @jax.jit
     def sim(self):
         beam_eq_alm = self.compute_beam_eq()
+        dt_sec = (self.times_jd - self.times_jd[0]) * 24 * 3600
         phases = crojax.simulator.rot_alm_z(
-            self.lmax, times=self.times_jd, world="earth"
+            self.lmax, times=dt_sec, world="earth"
         )
         # this is the sky contribution, with implict ground loss
         vis_sky = crojax.simulator.convolve(beam_eq_alm, self.sky_alm, phases)
