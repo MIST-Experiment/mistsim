@@ -1,6 +1,7 @@
 """Tests for the sim module."""
 
-import os
+import astropy.units as u
+import croissant.jax as crojax
 import pytest
 import numpy as np
 import jax.numpy as jnp
@@ -8,16 +9,6 @@ import s2fft
 
 from mistsim.beam import Beam
 from mistsim.sim import Simulator, correct_ground_loss
-
-# Mark tests that require full astropy coordinate transforms
-# These may fail in sandboxed environments without internet access
-# due to SPICE kernel download requirements
-# Set MISTSIM_RUN_NETWORK_TESTS=1 to enable these tests
-SKIP_NETWORK_TESTS = os.environ.get("MISTSIM_RUN_NETWORK_TESTS") != "1"
-requires_coords = pytest.mark.skipif(
-    SKIP_NETWORK_TESTS,
-    reason="Requires astropy coordinate transforms with SPICE kernels",
-)
 
 
 class TestSimulatorInitialization:
@@ -38,15 +29,17 @@ class TestSimulatorInitialization:
     def valid_sky_alm(self):
         """Create valid sky alm for testing."""
         # For lmax=50, shape is (nfreq, lmax+1, 2*lmax+1)
-        nfreq = 2
         lmax = 50
         rng = np.random.default_rng(seed=42)
         sky_alm = s2fft.utils.signal_generator.generate_flm(
-            rng, lmax+1, reality=True
+            rng, lmax + 1, reality=True
         )
-        return jnp.array(sky_alm)
+        sky_alm2 = s2fft.utils.signal_generator.generate_flm(
+            rng, lmax + 1, reality=True
+        )
+        sky_alm = jnp.array([sky_alm, sky_alm2])
+        return sky_alm
 
-    @requires_coords
     def test_simulator_initialization_basic(self, valid_beam, valid_sky_alm):
         """Test basic simulator initialization."""
         freqs = jnp.array([50.0, 100.0])
@@ -69,11 +62,10 @@ class TestSimulatorInitialization:
         assert jnp.allclose(sim.lon, lon)
         assert jnp.allclose(sim.lat, lat)
 
-    @requires_coords
     def test_simulator_with_altitude(self, valid_beam, valid_sky_alm):
         """Test simulator initialization with altitude."""
-        freqs = np.array([50.0, 100.0])
-        times_jd = np.array([2459000.0])
+        freqs = jnp.array([50.0, 100.0])
+        times_jd = jnp.array([2459000.0])
         lon = -122.0
         lat = 37.0
         alt = 1000.0
@@ -90,7 +82,6 @@ class TestSimulatorInitialization:
 
         assert jnp.isclose(sim.alt, alt)
 
-    @requires_coords
     def test_simulator_with_ground_temperature(
         self, valid_beam, valid_sky_alm
     ):
@@ -159,7 +150,6 @@ class TestSimulatorInitialization:
                 lat=lat,
             )
 
-    @requires_coords
     def test_simulator_single_time(self, valid_beam, valid_sky_alm):
         """Test simulator with a single time point."""
         freqs = np.array([50.0, 100.0])
@@ -178,7 +168,6 @@ class TestSimulatorInitialization:
 
         assert sim.times_jd.shape == (1,)
 
-    @requires_coords
     def test_simulator_multiple_times(self, valid_beam, valid_sky_alm):
         """Test simulator with multiple time points."""
         freqs = np.array([50.0, 100.0])
@@ -233,7 +222,6 @@ class TestSimulatorMethods:
             lat=lat,
         )
 
-    @requires_coords
     def test_compute_beam_eq(self, simulator):
         """Test compute_beam_eq method."""
         beam_eq_alm = simulator.compute_beam_eq()
@@ -243,7 +231,6 @@ class TestSimulatorMethods:
         assert beam_eq_alm.shape == expected_shape
         assert jnp.iscomplexobj(beam_eq_alm)
 
-    @requires_coords
     def test_compute_ground_contribution(self, simulator):
         """Test compute_ground_contribution method."""
         vis_gnd = simulator.compute_ground_contribution()
@@ -255,28 +242,24 @@ class TestSimulatorMethods:
         # Should be less than or equal to ground temperature
         assert jnp.all(vis_gnd <= simulator.Tgnd)
 
-    @requires_coords
     def test_sim_output_shape(self, simulator):
         """Test that sim() returns correct output shape."""
         vis = simulator.sim()
 
-        # Output should have shape (nfreq, ntimes)
+        # Output should have shape (ntimes, nfreq)
         expected_shape = (2, 2)
         assert vis.shape == expected_shape
 
-    @requires_coords
     def test_sim_output_is_real(self, simulator):
         """Test that sim() returns real values."""
         vis = simulator.sim()
         assert not jnp.iscomplexobj(vis)
 
-    @requires_coords
     def test_sim_output_finite(self, simulator):
         """Test that sim() returns finite values."""
         vis = simulator.sim()
         assert jnp.all(jnp.isfinite(vis))
 
-    @requires_coords
     def test_sim_with_single_time(self):
         """Test simulation with a single time point."""
         nfreq = 1
@@ -307,7 +290,6 @@ class TestSimulatorMethods:
         vis = sim.sim()
         assert vis.shape == (1, 1)
 
-    @requires_coords
     def test_sim_different_times_different_results(self, simulator):
         """Test that different times produce different results."""
         vis = simulator.sim()
@@ -397,7 +379,6 @@ class TestCorrectGroundLoss:
 class TestIntegration:
     """Integration tests for the full simulation pipeline."""
 
-    @requires_coords
     def test_full_pipeline(self):
         """Test the complete pipeline from beam to visibilities."""
         # Create a simple but realistic setup
@@ -412,10 +393,11 @@ class TestIntegration:
         beam = Beam(data=data, freqs=freqs, lmax=lmax)
 
         # Create sky alm
-        sky_alm = np.random.randn(
-            nfreq, lmax + 1, 2 * lmax + 1
-        ) + 1j * np.random.randn(nfreq, lmax + 1, 2 * lmax + 1)
-        sky_alm = jnp.array(sky_alm)
+        rng = np.random.default_rng(seed=42)
+        sky_alm = s2fft.utils.signal_generator.generate_flm(
+            rng, lmax + 1, reality=True
+        )
+        sky_alm = jnp.array(sky_alm)[None, :, :]  # Add frequency axis
 
         # Create simulator
         times_jd = np.linspace(2459000.0, 2459000.5, 5)
@@ -434,11 +416,10 @@ class TestIntegration:
         vis = sim.sim()
 
         # Check output
-        assert vis.shape == (nfreq, 5)
+        assert vis.shape == (5, nfreq)
         assert jnp.all(jnp.isfinite(vis))
         assert not jnp.iscomplexobj(vis)
 
-    @requires_coords
     def test_ground_loss_correction_pipeline(self):
         """Test full pipeline including ground loss correction."""
         nfreq = 1
@@ -480,3 +461,152 @@ class TestIntegration:
         # Corrected visibilities should be different from original
         assert not jnp.allclose(vis, vis_corrected)
         assert jnp.all(jnp.isfinite(vis_corrected))
+
+    def test_monopole_sky(self):
+        """Test that a monopole sky produces expected visibilities."""
+        nfreq = 2
+        ntheta = 181
+        nphi = 360
+        lmax = 30
+
+        data = np.ones((nfreq, ntheta, nphi))
+        freqs = np.array([100.0, 150.0])
+
+        # no horizon
+        horizon_mask = np.ones((ntheta, nphi), dtype=bool)
+        beam = Beam(data=data, freqs=freqs, lmax=lmax, horizon=horizon_mask)
+
+        # Monopole sky: only alm[0,0] is nonzero
+        sky_alm = jnp.zeros((nfreq, lmax + 1, 2 * lmax + 1), dtype=complex)
+        sky_alm = sky_alm.at[:, 0, lmax].set(1.0)
+
+        # should get the same visibility at all times and frequencies
+        times_jd = np.linspace(2459000.0, 2459001.0, 10)
+        sim = Simulator(
+            beam=beam,
+            sky_alm=sky_alm,
+            times_jd=times_jd,
+            freqs=freqs,
+            lon=30.0,
+            lat=45.0,
+        )
+
+        vis = sim.sim()
+        # All visibilities should be the same (monopole)
+        assert jnp.allclose(vis, vis[0, 0])
+        # the expected temp should be a00 * Y00 = 1 * sqrt(1/4pi) ~ 0.28209479
+        expected_vis = 1.0 * np.sqrt(1 / (4 * np.pi))
+        assert jnp.isclose(vis[0, 0], expected_vis, rtol=1e-6)
+
+        # use default horizon (about half the sky visible)
+        beam_default_horizon = Beam(data=data, freqs=freqs, lmax=lmax)
+        sim_default_horizon = Simulator(
+            beam=beam_default_horizon,
+            sky_alm=sky_alm,
+            times_jd=times_jd,
+            freqs=freqs,
+            lon=30.0,
+            lat=45.0,
+            Tgnd=0,
+        )
+        vis_default_horizon = sim_default_horizon.sim()
+        # With the default horizon, we should see about half the monopole
+        assert jnp.isclose(
+            vis_default_horizon[0, 0], expected_vis / 2, rtol=0.1
+        )
+        # correcting for ground loss should recover the full monopole
+        fgnd = beam_default_horizon.compute_fgnd()
+        vis_corrected = correct_ground_loss(vis_default_horizon, fgnd, Tgnd=0)
+        assert jnp.isclose(vis_corrected[0, 0], expected_vis, rtol=1e-6)
+
+        # non zero ground temp should increase the antenna temperature
+        sim_with_ground = Simulator(
+            beam=beam_default_horizon,
+            sky_alm=sky_alm,
+            times_jd=times_jd,
+            freqs=freqs,
+            lon=30.0,
+            lat=45.0,
+            Tgnd=300.0,
+        )
+        vis_with_ground = sim_with_ground.sim()
+        expected_vis_gnd = expected_vis * (1 - fgnd) + 300.0 * fgnd
+        assert jnp.allclose(vis_with_ground[0, 0], expected_vis_gnd, rtol=1e-6)
+        # correcting for ground loss should recover the full monopole
+        vis_corrected_gnd = correct_ground_loss(
+            vis_with_ground, fgnd, Tgnd=300.0
+        )
+        assert jnp.allclose(vis_corrected_gnd[0, 0], expected_vis, rtol=1e-6)
+
+    def test_time_dependence(self):
+        """Use a sky with cos(phi) dependence to test that visibilities change with time."""
+        nfreq = 1
+        ntheta = 181
+        nphi = 360
+        lmax = 30
+
+        theta = np.linspace(0, np.pi, ntheta)
+        phi = np.linspace(0, 2 * np.pi, nphi, endpoint=False)
+        # ensure the beam has same dependence
+        phi_grid, theta_grid = np.meshgrid(phi, theta)
+        beam_pattern = -np.sin(theta_grid) * np.cos(phi_grid)
+        data = np.tile(beam_pattern[None, :, :], (nfreq, 1, 1))
+        # add a monopole term to avoid bad normalization from zero mean
+        data += 1.0
+        freqs = np.array([100.0])
+        horizon = np.ones((ntheta, nphi), dtype=bool)  # no horizon
+        beam = Beam(data=data, freqs=freqs, lmax=lmax, horizon=horizon)
+
+        sky_alm = jnp.zeros((nfreq, lmax + 1, 2 * lmax + 1), dtype=complex)
+        # make all alms 0 expect l=1, m=1
+        sky_alm = sky_alm.at[:, 1, lmax + 1].set(1.0)
+        sky_alm = sky_alm.at[:, 1, lmax - 1].set(-1.0)  # reality condition
+
+        times_jd = np.linspace(2459000.0, 2459001.0, 10)
+        sim = Simulator(
+            beam=beam,
+            sky_alm=sky_alm,
+            times_jd=times_jd,
+            freqs=freqs,
+            lon=0.0,
+            lat=0.0,
+        )
+
+        vis = sim.sim()
+        # Visibilities should change with time due to cos(phi) dependence
+        assert not jnp.allclose(vis[:, 0], vis[0, 0], rtol=1e-10)
+
+        # we should see beam_alm * sky_alm for the l=1, m=1 mode
+        beam_alm = sim.compute_beam_eq()
+        expected_vis = beam_alm[:, 1, lmax + 1] * sky_alm[:, 1, lmax + 1]
+        expected_vis *= 2  # for symmetry of m=1 mode
+        expected_vis = expected_vis.real / sim.beam.compute_norm()
+        assert jnp.isclose(vis[0, 0], expected_vis[0], rtol=1e-6)
+
+        # the dependence should be sinusoidal with period of 1 day (since m=1 mode)
+        dtsec = sim.times_jd - sim.times_jd[0]
+        dtsec = dtsec * 24 * 3600
+        sim_phases = crojax.simulator.rot_alm_z(
+            sim.lmax, times=dtsec, world="earth"
+        )
+        # only care about the m=1 mode
+        phase_m1 = sim_phases[:, lmax + 1]
+        assert jnp.allclose(sim_phases[:, lmax - 1], phase_m1.conj(), rtol=1e-10)
+
+        sidereal_day_length = (1 * u.sday).to(u.day).value
+        arg = -2 * np.pi * (times_jd - times_jd[0]) / sidereal_day_length
+
+        assert jnp.allclose(phase_m1, jnp.exp(1j * arg), atol=1e-3)
+
+        v0 = vis[0, 0]
+        v1 = vis[1, 0]
+        th1 = arg[1]
+        # the visibility should follow v = v0 * cos(th) + v1 * sin(th) where th is the phase of the m=1 mode
+        asin = (v0 * jnp.cos(th1) - v1) / jnp.sin(th1)
+        expected_vis = v0 * jnp.cos(arg) - asin * jnp.sin(arg)
+
+        assert jnp.allclose(
+            vis[:, 0],
+            expected_vis,
+            rtol=1e-6,
+        )
