@@ -1,25 +1,7 @@
 """Shared pytest configuration and fixtures."""
 
-import sys
-import os
 import pytest
 import numpy as np
-from unittest import mock
-
-
-def pytest_configure(config):
-    """Configure pytest environment before tests run."""
-    # Mock lunarsky module before any imports
-    # This prevents network calls during import
-    mock_lunarsky = mock.MagicMock()
-    mock_lunarsky.MoonLocation = mock.MagicMock()
-    sys.modules["lunarsky"] = mock_lunarsky
-    sys.modules["lunarsky.spice_utils"] = mock.MagicMock()
-    sys.modules["lunarsky.moon"] = mock.MagicMock()
-
-    # Set environment variable to prevent astropy from blocking on
-    # download locks during parallel test execution
-    os.environ["ASTROPY_DOWNLOAD_CACHE_LOCK_ATTEMPTS"] = "0"
 
 
 @pytest.fixture(scope="session")
