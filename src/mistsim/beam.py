@@ -108,7 +108,7 @@ class Beam(eqx.Module):
             )
 
         if horizon is None:
-            horizon = self.theta <= 90.0
+            horizon = self.theta <= jnp.pi/2
             self.horizon = horizon[:, None]  # add phi axis
 
         else:
