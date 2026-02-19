@@ -66,7 +66,7 @@ class TestBeamInitialization:
         beam = Beam(data=data, freqs=freqs)
 
         # Default horizon should be theta <= 90
-        expected_horizon = beam.theta <= 90.0
+        expected_horizon = beam.theta <= jnp.radians(90.0)
         assert beam.horizon.shape == (181, 1)  # theta, 1
         assert jnp.allclose(beam.horizon[:, 0], expected_horizon)
 
@@ -143,6 +143,7 @@ class TestBeamMethods:
         assert norm.shape == (2,)
         # For uniform beam, norm should be 4π
         assert jnp.all(norm > 0)
+        assert jnp.allclose(norm, 4 * jnp.pi)
 
     def test_compute_fgnd(self, simple_beam):
         """Test compute_fgnd method."""
@@ -153,6 +154,8 @@ class TestBeamMethods:
         # Ground fraction should be between 0 and 1
         assert jnp.all(fgnd >= 0)
         assert jnp.all(fgnd <= 1)
+        # default horizon means fgnd should be 0.5 for uniform beam
+        assert jnp.allclose(fgnd, 0.5, atol=1e-2)
 
     def test_compute_fgnd_consistency(self, simple_beam):
         """Test that fgnd is consistent with norm calculations."""
@@ -172,6 +175,31 @@ class TestBeamMethods:
         assert alm.shape == expected_shape
         # alm should be complex
         assert jnp.iscomplexobj(alm)
+
+        # should be the same for both frequencies since the beam is the same
+        assert jnp.allclose(alm[0], alm[1])
+
+    def test_compute_alm_no_horizon(self):
+        """Test compute_alm with no horizon masking."""
+        nfreq = 1
+        ntheta = 181
+        nphi = 360
+        data = np.ones((nfreq, ntheta, nphi))
+        freqs = np.array([100.0])
+        horizon = np.ones((ntheta, nphi), dtype=bool)
+
+        beam = Beam(data=data, freqs=freqs, horizon=horizon)
+        alm = beam.compute_alm()
+
+        # should have shape (nfreq, lmax+1, 2*lmax+1)
+        expected_shape = (1, 180, 359)
+        assert alm.shape == expected_shape
+
+        # should be 1/sqrt(4pi) for monopole and 0 for others
+        monopole = alm[:, 0, 179]
+        assert jnp.allclose(monopole, jnp.sqrt(4 * jnp.pi))
+        assert jnp.allclose(alm[:, 1:, :], 0.0, atol=1e-3)
+
 
     def test_compute_alm_with_custom_lmax(self):
         """Test compute_alm with custom lmax."""
@@ -204,6 +232,13 @@ class TestBeamMethods:
         # alm should be computed and have correct shape
         assert alm.shape == (1, 180, 359)
         assert jnp.iscomplexobj(alm)
+
+        # should be related to the non-rotated case by a phase factor in m
+        alm_no_rot = Beam(data=data, freqs=freqs).compute_alm()
+        m = jnp.arange(-179, 180)
+        phase_factor = jnp.exp(-1j * jnp.radians(beam_az_rot) * m)
+        expected_alm = alm_no_rot[0] * phase_factor[None, :]
+        assert jnp.allclose(alm[0], expected_alm, atol=1e-3)
 
     def test_horizon_masking_in_alm(self):
         """Test that horizon masking is applied in alm computation."""
