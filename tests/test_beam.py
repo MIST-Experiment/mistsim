@@ -200,7 +200,6 @@ class TestBeamMethods:
         assert jnp.allclose(monopole, jnp.sqrt(4 * jnp.pi))
         assert jnp.allclose(alm[:, 1:, :], 0.0, atol=1e-3)
 
-
     def test_compute_alm_with_custom_lmax(self):
         """Test compute_alm with custom lmax."""
         nfreq = 1

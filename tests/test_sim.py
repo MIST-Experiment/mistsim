@@ -539,7 +539,10 @@ class TestIntegration:
         assert jnp.allclose(vis_corrected_gnd[0, 0], expected_vis, rtol=1e-6)
 
     def test_time_dependence(self):
-        """Use a sky with cos(phi) dependence to test that visibilities change with time."""
+        """
+        Use a sky with cos(phi) dependence to test that visibilities
+        change with time.
+        """
         nfreq = 1
         ntheta = 181
         nphi = 360
@@ -583,7 +586,7 @@ class TestIntegration:
         expected_vis = expected_vis.real / sim.beam.compute_norm()
         assert jnp.isclose(vis[0, 0], expected_vis[0], rtol=1e-6)
 
-        # the dependence should be sinusoidal with period of 1 day (since m=1 mode)
+        # the dependence should be sine with period of 1 day
         dtsec = sim.times_jd - sim.times_jd[0]
         dtsec = dtsec * 24 * 3600
         sim_phases = crojax.simulator.rot_alm_z(
@@ -591,7 +594,9 @@ class TestIntegration:
         )
         # only care about the m=1 mode
         phase_m1 = sim_phases[:, lmax + 1]
-        assert jnp.allclose(sim_phases[:, lmax - 1], phase_m1.conj(), rtol=1e-10)
+        assert jnp.allclose(
+            sim_phases[:, lmax - 1], phase_m1.conj(), rtol=1e-10
+        )
 
         sidereal_day_length = (1 * u.sday).to(u.day).value
         arg = -2 * np.pi * (times_jd - times_jd[0]) / sidereal_day_length
@@ -601,7 +606,7 @@ class TestIntegration:
         v0 = vis[0, 0]
         v1 = vis[1, 0]
         th1 = arg[1]
-        # the visibility should follow v = v0 * cos(th) + v1 * sin(th) where th is the phase of the m=1 mode
+        # vis should go as v = v0 * cos(th) + v1 * sin(th)
         asin = (v0 * jnp.cos(th1) - v1) / jnp.sin(th1)
         expected_vis = v0 * jnp.cos(arg) - asin * jnp.sin(arg)
 

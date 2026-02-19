@@ -22,7 +22,7 @@ class Simulator(eqx.Module):
     alt: jax.Array  # altitude in meters
     lmax: int = eqx.field(static=True)
     L: int = eqx.field(static=True)
-    eul_topo: tuple = eqx.field(static=True)  # euler angles for topocentric to eq frame
+    eul_topo: tuple = eqx.field(static=True)  # euler angles for topo to eq
     dl_topo: jax.Array  # dl array for topocentric to eq frame
     Tgnd: jax.Array  # ground temperature in K
 

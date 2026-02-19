@@ -1,17 +1,19 @@
 from argparse import ArgumentParser
 import numpy as np
 import re
-import sys
 
 
 def parse_feko_out(filepath, output_filepath=None):
     """
     Parses a Feko .out file to extract Far Field gain data.
 
-    Args:
-        filepath (str): Path to the .out file.
-        output_filepath (str, optional): Path to save the .npz file.
-                                         If None, saves with same name as input.
+    Parameters
+    ----------
+    filepath : str
+        Path to the .out file.
+    output_filepath : str
+        Path to save the .npz file. If None, saves with same name as input.
+
     """
 
     freqs = []
@@ -35,17 +37,14 @@ def parse_feko_out(filepath, output_filepath=None):
     for i, line in enumerate(lines):
         line = line.strip()
 
-        # 1. Detect Frequency
-        # We assume the Frequency line appears before the table for that frequency
         freq_match = freq_pattern.search(line)
         if freq_match:
-            # If we were previously collecting data, save it before starting new freq
             if current_block_data:
                 raw_gain_data.append(current_block_data)
                 current_block_data = []
                 reading_data = False
 
-            # Feko frequencies are usually in Hz
+            # feko frequencies are usually in Hz
             current_freq_val = float(freq_match.group(1))
             freqs.append(current_freq_val)
             continue
@@ -80,14 +79,14 @@ def parse_feko_out(filepath, output_filepath=None):
                 phi = float(parts[1])
 
                 # Column 8 (0-indexed) is specified as 'total'
-                # Cols: 0=Theta, 1=Phi, 2=Mag1, 3=Ph1, 4=Mag2, 5=Ph2, 6=Vert, 7=Horiz, 8=Total
+                # Cols: 0=Theta, 1=Phi, 8=Total gain in dB
                 total_gain = float(parts[8])
 
                 current_block_data.append((theta, phi, total_gain))
 
             except (ValueError, IndexError):
-                # If we fail to parse numbers, we assume we hit the end of the table text
-                # or a separator line
+                # if we fail to parse numbers, we assume we hit the end
+                # of the table text or a separator line
                 if len(current_block_data) > 0:
                     reading_data = False
                     raw_gain_data.append(current_block_data)
@@ -136,7 +135,8 @@ def parse_feko_out(filepath, output_filepath=None):
         # Check consistency
         if len(block) != Ntheta * Nphi:
             print(
-                f"Warning: Frequency {freqs[f_idx]} has {len(block)} points, expected {Ntheta*Nphi}. Skipping."
+                f"Warning: Frequency {freqs[f_idx]} has {len(block)} points,"
+                f"expected {Ntheta*Nphi}. Skipping."
             )
             continue
 
@@ -175,13 +175,15 @@ def parse_feko_out(filepath, output_filepath=None):
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser(description="Parse Feko .out files to extract Far Field gain data.")
+    parser = ArgumentParser(
+        description="Parse Feko .out files to extract Far Field gain data."
+    )
     parser.add_argument("filepath", help="Path to the Feko .out file.")
     parser.add_argument(
         "-o",
         "--output",
         default=None,
-        help="Path to save the output .npz file. If not provided, saves with same name as input.",
+        help="Path to save the output .npz file. Default: same name as input.",
     )
     args = parser.parse_args()
     filepath = args.filepath
