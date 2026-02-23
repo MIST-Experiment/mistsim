@@ -1,40 +1,23 @@
-from functools import partial
+import warnings
 
-import croissant.jax as crojax
-import equinox as eqx
+import croissant as cro
 import jax
-import jax.numpy as jnp
-import s2fft
-from astropy.coordinates import AltAz, EarthLocation
-from astropy.time import Time
 
-from . import Beam
+from .sky import Sky
 
 
-class Simulator(eqx.Module):
-
-    beam: Beam
-    sky_alm: jax.Array
-    times_jd: jax.Array  # times in Julian day
-    freqs: jax.Array  # in MHz
-    lon: jax.Array  # longitude of in degrees
-    lat: jax.Array  # latitude in degrees
-    alt: jax.Array  # altitude in meters
-    lmax: int = eqx.field(static=True)
-    L: int = eqx.field(static=True)
-    eul_topo: tuple = eqx.field(static=True)  # euler angles for topo to eq
-    dl_topo: jax.Array  # dl array for topocentric to eq frame
-    Tgnd: jax.Array  # ground temperature in K
+class Simulator(cro.Simulator):
 
     def __init__(
         self,
         beam,
-        sky_alm,
+        sky,
         times_jd,
         freqs,
         lon,
         lat,
         alt=0,
+        lmax=None,
         Tgnd=300.0,
     ):
         """
@@ -48,13 +31,13 @@ class Simulator(eqx.Module):
         Parameters
         ----------
         beam : Beam
-            The beam model to use for the simulation. Contains
-            information about the beam pattern and any associated
-            parameters, including the horizon.
-        sky_alm : jax.Array
-            The spherical harmonics decomposition of the sky to use for
-            the simulation. This should be in equatorial coordinates.
-            Expected shape is (Nfreqs, lmax+1, 2*lmax+1).
+            The beam model to use for the simulation.
+        sky : Sky or jax.Array
+            The sky model to use for the simulation. Preferred a sky
+            object, but sky_alm is also accepted for backwards
+            compatibility. If sky_alm is provided, it should be the
+            spherical harmonics decomposition of the sky in equatorial
+            coordinates. Expected shape is (Nfreqs, lmax+1, 2*lmax+1).
         times_jd : jax.Array
             The times in Julian day at which to simulate the
             observations.
@@ -68,97 +51,62 @@ class Simulator(eqx.Module):
             The latitude of the observer in degrees.
         alt : float
             The altitude of the observer in meters.
+        lmax : int or None
+            The maximum ell value to use for the simulation. Must be
+            smaller than or equal to the lmax values of the beam and
+            sky models. If None, the minimum of the beam and sky lmax
+            values is used.
         Tgnd : float
             The ground temperature in Kelvin. Only a constant
             temperature is supported for now.
 
+        Raises
+        ------
+        FutureWarning
+            If sky is provided as a jax.Array instead of a Sky object.
+            This will be removed in a future version, so users are
+            encouraged to switch to using a Sky object for the sky
+            model.
+
         """
-        if not jnp.all(beam.freqs == freqs):
-            raise ValueError("Beam and simulation frequencies do not match.")
-        self.freqs = freqs
-        self.beam = beam
-        self.sky_alm = sky_alm
-        self.times_jd = times_jd
+        if isinstance(sky, jax.Array):
+            warnings.warn(
+                "Providing sky as a jax.Array is deprecated and will be "
+                "removed in a future version. Please switch to using a "
+                "Sky object for the sky model.",
+                FutureWarning,
+            )
+            sky_alm = sky
+            sky = Sky.from_alm(sky_alm, freqs)
 
-        beam_lmax = beam.lmax
-        sky_lmax = crojax.alm.lmax_from_shape(sky_alm.shape)
-        if beam_lmax != sky_lmax:
-            raise ValueError("Beam and sky alm have different lmax values.")
-        self.lmax = beam_lmax
-        self.L = self.lmax + 1
-
-        self.Tgnd = jnp.array(Tgnd)
-
-        self.lon = jnp.array(lon)
-        self.lat = jnp.array(lat)
-        self.alt = jnp.array(alt)
-        loc = EarthLocation.from_geodetic(lon, lat, height=alt)
-        t0 = Time(times_jd[0], format="jd")
-        topo = AltAz(location=loc, obstime=t0)
-        eul_topo, dl_topo = crojax.rotations.generate_euler_dl(
-            self.lmax, topo, "fk5"
+        super().__init__(
+            beam,
+            sky,
+            times_jd,
+            freqs,
+            lon,
+            lat,
+            alt=alt,
+            lmax=lmax,
+            world="earth",
+            Tgnd=Tgnd,
         )
-        self.eul_topo = tuple(float(angle) for angle in eul_topo)
-        self.dl_topo = jnp.array(dl_topo)
 
-    @jax.jit
-    def compute_beam_eq(self):
-        """
-        Compute the beam alm in equatorial coordinates. This uses the
-        pre-computed Euler angles and dl array for the topocentric to
-        equatorial transformation.
-
-        Returns
-        -------
-        beam_eq_alm : jax.Array
-            The beam alm in equatorial coordinates. Shape is
-            (Nfreqs, lmax+1, 2*lmax+1).
-
-        """
-        beam_alm = self.beam.compute_alm()
-        transform = partial(
-            s2fft.utils.rotation.rotate_flms,
-            L=self.L,
-            rotation=self.eul_topo,
-            dl_array=self.dl_topo,
-        )
-        return jax.vmap(transform)(beam_alm)
-
-    @jax.jit
-    def compute_ground_contribution(self):
-        """
-        Compute the ground contribution to the visibility. This is
-        simply the beam response below the horizon multiplied by the ground
-        temperature.
-
-        Returns
-        -------
-        vis_gnd : jax.Array
-            The ground contribution to the visibility.
-
-        """
-        return self.beam.compute_fgnd() * self.Tgnd
-
-    @jax.jit
-    def sim(self):
-        beam_eq_alm = self.compute_beam_eq()
-        dt_sec = (self.times_jd - self.times_jd[0]) * 24 * 3600
-        phases = crojax.simulator.rot_alm_z(
-            self.lmax, times=dt_sec, world="earth"
-        )
-        # this is the sky contribution, with implict ground loss
-        vis_sky = crojax.simulator.convolve(beam_eq_alm, self.sky_alm, phases)
-        vis_sky /= self.beam.compute_norm()
-        # add the ground contribution
-        vis_gnd = self.compute_ground_contribution()
-        vis = vis_sky + vis_gnd
-        return vis.real
 
 
 @jax.jit
 def correct_ground_loss(vis, fgnd, Tgnd):
     """
-    Correct for ground loss in the simulated visibilities.
+    This function is deprecated and will be removed in a future
+    version. Please use the `correct_ground_loss` function in
+    croissant.simulator instead.
+
+    Correct for ground loss in the simulated visibilities. This
+    function recovers the true sky temperature if the assumed ground
+    fraction and ground temperature are correct. In simulations, these
+    can be accessed with the `compute_fgnd` method of the beam and the
+    `Tgnd` attribute of the Simulator, respectively. On real data, they
+    have to be estimated or measured.
 
     Parameters
     ----------
@@ -167,7 +115,8 @@ def correct_ground_loss(vis, fgnd, Tgnd):
     fgnd : jax.Array
        The assumed ground fraction to use for the correction.
     Tgnd : jax.Array
-       The assumed ground temperature to use for the correction
+       The assumed ground temperature to use for the correction. Must
+       be spatially uniform in this implementation.
 
     Returns
     -------
@@ -175,7 +124,11 @@ def correct_ground_loss(vis, fgnd, Tgnd):
        The simulated visibilities with the ground loss corrected.
 
     """
-    fsky = 1 - fgnd
-    corrected_vis = vis - fgnd * Tgnd
-    corrected_vis /= fsky
-    return corrected_vis
+    warnings.warn(
+        "The `correct_ground_loss` function in sim.py is deprecated and "
+        "will be removed in a future version. Please use the "
+        "`correct_ground_loss` function in croissant.simulator instead.",
+        FutureWarning,
+        stacklevel=2,
+    )
+    return cro.simulator.correct_ground_loss(vis, fgnd, Tgnd)
