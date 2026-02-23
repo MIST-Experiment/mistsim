@@ -7,9 +7,9 @@ name = "mistsim"
 version = "0.0.1"
 description = "Simulations of MIST observations."
 readme = "README.md"
+requires-python = ">=3.10, <3.13"
 license = {text = "MIT"}
 authors = [{ name="Christian Hellum Bye", email="cbh@berkeley.edu" }]
-requires-python = ">=3.9"
 classifiers = [
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: MIT License",
@@ -17,7 +17,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Astronomy",
 ]
 dependencies = [
-  "croissant-sim==4.1.0",
+  "croissant-sim<5.0.0",
   "equinox",
   "jax",
   "numpy",
@@ -26,15 +26,14 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "black",
-  "flake8",
   "pytest",
   "pytest-cov",
   "pytest-timeout",
+  "ruff",
 ]
 
-[tool.setuptools]
-include-package-data = true
+[project.urls]
+Homepage = "https://github.com/MIST-Experiment/mistsim"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -45,11 +44,33 @@ pythonpath = ["src"]
 addopts = [
   "--cov=src",
   "--cov-report=term-missing",
-  "--cov-report=xml",
+  "--cov-report=html",
   "--junitxml=junit.xml",
   "-o junit_family=legacy",
   "--timeout=60",
 ]
 
-[tool.black]
+[tool.ruff]
 line-length = 79
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402", "F401"]
+"notebooks/*" = ["E402"]
+
+[dependency-groups]
+dev = [
+  "healpy>=1.19.0",
+  "ipympl>=0.10.0",
+  "jupyterlab>=4.5.4",
+  "jupyterlab-vim>=4.1.4",
+  "matplotlib>=3.10.8",
+  "pygdsm>=1.6.4",
+  "pytest",
+  "pytest-cov",
+  "pytest-timeout",
+  "ruff",
+]
