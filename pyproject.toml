@@ -17,7 +17,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Astronomy",
 ]
 dependencies = [
-  "croissant-sim<5.0.0",
+  "croissant-sim>=5.0.0",
   "equinox",
   "jax",
   "numpy",
@@ -60,6 +60,9 @@ ignore = []
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402", "F401"]
 "notebooks/*" = ["E402"]
+
+[tool.uv.sources]
+croissant-sim = { path = "../../../projects/croissant" }
 
 [dependency-groups]
 dev = [
