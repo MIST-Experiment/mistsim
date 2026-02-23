@@ -1,14 +1,14 @@
 from functools import partial
 
-from astropy.coordinates import AltAz, EarthLocation
-from astropy.time import Time
 import croissant.jax as crojax
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import s2fft
+from astropy.coordinates import AltAz, EarthLocation
+from astropy.time import Time
 
-from . import Beam, utils
+from . import Beam
 
 
 class Simulator(eqx.Module):
@@ -81,7 +81,7 @@ class Simulator(eqx.Module):
         self.times_jd = times_jd
 
         beam_lmax = beam.lmax
-        sky_lmax = utils.get_lmax(sky_alm.shape)
+        sky_lmax = crojax.alm.lmax_from_shape(sky_alm.shape)
         if beam_lmax != sky_lmax:
             raise ValueError("Beam and sky alm have different lmax values.")
         self.lmax = beam_lmax
