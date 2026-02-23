@@ -2,9 +2,9 @@
 
 import astropy.units as u
 import croissant.jax as crojax
-import pytest
-import numpy as np
 import jax.numpy as jnp
+import numpy as np
+import pytest
 import s2fft
 
 from mistsim.beam import Beam

@@ -1,8 +1,8 @@
 """Tests for the beam module."""
 
-import pytest
-import numpy as np
 import jax.numpy as jnp
+import numpy as np
+import pytest
 
 from mistsim.beam import Beam
 
