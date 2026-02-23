@@ -3,7 +3,7 @@ import warnings
 import croissant as cro
 import jax
 
-from .sky import Sky
+from . import sky as skymod
 
 
 class Simulator(cro.Simulator):
@@ -77,7 +77,7 @@ class Simulator(cro.Simulator):
                 FutureWarning,
             )
             sky_alm = sky
-            sky = Sky.from_alm(sky_alm, freqs)
+            sky = skymod._SkyAlm(sky_alm, freqs)
 
         super().__init__(
             beam,
