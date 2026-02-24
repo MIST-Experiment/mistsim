@@ -75,6 +75,7 @@ class Beam(cro.Beam):
                 " and the sampling scheme and will be ignored if provided. "
                 "In the future, this will become an error.",
                 FutureWarning,
+                stacklevel=4,
             )
         super().__init__(
             data,
