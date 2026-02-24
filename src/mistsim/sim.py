@@ -74,7 +74,7 @@ class Simulator(cro.Simulator):
                 "deprecated and will be removed in a future version. Please "
                 "switch to using a Sky object for the sky model.",
                 FutureWarning,
-                stacklevel=2,
+                stacklevel=4,
             )
             sky_alm = sky
             sky = skymod._SkyAlm(sky_alm, freqs)
