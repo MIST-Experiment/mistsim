@@ -1,9 +1,10 @@
 """Tests for the beam module."""
-import pytest
-
 import jax.numpy as jnp
+import pytest
+import warnings
 
 from mistsim.beam import Beam
+
 
 def test_lmax_warning():
     """Test that a warning is raised when lmax is not None"""
@@ -14,9 +15,9 @@ def test_lmax_warning():
     with pytest.warns(
         FutureWarning, match="Lmax is now automatically determined"
     ):
-        Beam(freqs, data, sampling, lmax=1000)
+        Beam(data, freqs, sampling, lmax=1000)
 
     # ensure that no warning is raised when lmax is None
-    with pytest.warns(None) as record:
-        Beam(freqs, data, sampling, lmax=None)
-    assert len(record) == 0
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # treat warnings as errors
+        Beam(data, freqs, sampling, lmax=None)

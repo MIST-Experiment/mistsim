@@ -23,7 +23,8 @@ class Beam(cro.Beam):
 
         Note that the `lmax` parameter is no longer used. The `lmax` is
         automatically determined from the shape of the input data and
-        the sampling scheme.
+        the sampling scheme. To change the `lmax` the simulation runs
+        at, change `lmax` of the Simulator object.
 
         Parameters
         ----------

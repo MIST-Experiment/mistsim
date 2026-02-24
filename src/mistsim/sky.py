@@ -1,6 +1,7 @@
 import croissant as cro
 import equinox as eqx
 import jax
+import jax.numpy as jnp
 
 
 class Sky(cro.Sky):
@@ -40,17 +41,8 @@ class Sky(cro.Sky):
             )
         super().__init__(data, freqs, sampling=sampling, coord=coord)
 
-    @jax.jit
-    def compute_alm_eq(self):
-        """
-        Compute the spherical harmonic coefficients (alm) of the sky
-        model in equatorial coordinates.
 
-        """
-        return super().compute_alm(world="earth")
-
-
-class _SkyAlm:
+class _SkyAlm(eqx.Module):
     _sky_alm: jax.Array
     freqs: jax.Array
     lmax: int = eqx.field(static=True)
@@ -82,7 +74,7 @@ class _SkyAlm:
             A Sky object with the given alm and frequencies.
 
         """
-        self._sky_alm = jax.asarray(sky_alm)
+        self._sky_alm = jnp.asarray(sky_alm)
         self.freqs = freqs
         self.lmax = cro.utils.lmax_from_shape(self._sky_alm.shape)
         self._L = self.lmax + 1
@@ -91,6 +83,5 @@ class _SkyAlm:
     def compute_alm(self):
         return self._sky_alm
 
-    @jax.jit
-    def compute_alm_eq(self):
+    def compute_alm_eq(self, world="earth"):
         return self._sky_alm
