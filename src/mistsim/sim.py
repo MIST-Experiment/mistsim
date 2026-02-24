@@ -69,12 +69,13 @@ class Simulator(cro.Simulator):
             model.
 
         """
-        if isinstance(sky, jax.Array):
+        if not isinstance(sky, skymod.Sky):
             warnings.warn(
-                "Providing sky as a jax.Array is deprecated and will be "
-                "removed in a future version. Please switch to using a "
-                "Sky object for the sky model.",
+                "Providing sky as an alm instead of a Sky object is"
+                "deprecated and will be removed in a future version. Please"
+                "switch to using a Sky object for the sky model.",
                 FutureWarning,
+                stacklevel=2,
             )
             sky_alm = sky
             sky = skymod._SkyAlm(sky_alm, freqs)
@@ -94,7 +95,6 @@ class Simulator(cro.Simulator):
 
 
 
-@jax.jit
 def correct_ground_loss(vis, fgnd, Tgnd):
     """
     This function is deprecated and will be removed in a future
