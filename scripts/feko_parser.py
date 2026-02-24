@@ -1,6 +1,7 @@
-from argparse import ArgumentParser
-import numpy as np
 import re
+from argparse import ArgumentParser
+
+import numpy as np
 
 
 def parse_feko_out(filepath, output_filepath=None):

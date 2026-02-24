@@ -1,7 +1,8 @@
 """Tests for the beam module."""
+import warnings
+
 import jax.numpy as jnp
 import pytest
-import warnings
 
 from mistsim.beam import Beam
 
