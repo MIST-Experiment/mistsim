@@ -1,7 +1,6 @@
 import warnings
 
 import croissant as cro
-import jax
 
 from . import sky as skymod
 
@@ -72,7 +71,7 @@ class Simulator(cro.Simulator):
         if not isinstance(sky, skymod.Sky):
             warnings.warn(
                 "Providing sky as an alm instead of a Sky object is"
-                "deprecated and will be removed in a future version. Please"
+                "deprecated and will be removed in a future version. Please "
                 "switch to using a Sky object for the sky model.",
                 FutureWarning,
                 stacklevel=2,
