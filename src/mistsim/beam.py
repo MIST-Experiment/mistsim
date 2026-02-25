@@ -72,7 +72,7 @@ class Beam(cro.Beam):
         if lmax is not None:
             warnings.warn(
                 "Lmax is now automatically determined from the data shape "
-                " and the sampling scheme and will be ignored if provided. "
+                "and the sampling scheme and will be ignored if provided. "
                 "In the future, this will become an error.",
                 FutureWarning,
                 stacklevel=4,
