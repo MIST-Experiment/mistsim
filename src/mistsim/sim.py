@@ -70,7 +70,7 @@ class Simulator(cro.Simulator):
         """
         if not isinstance(sky, skymod.Sky):
             warnings.warn(
-                "Providing sky as an alm instead of a Sky object is"
+                "Providing sky as an alm instead of a Sky object is "
                 "deprecated and will be removed in a future version. Please "
                 "switch to using a Sky object for the sky model.",
                 FutureWarning,

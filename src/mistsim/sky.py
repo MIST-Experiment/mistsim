@@ -68,11 +68,6 @@ class _SkyAlm(eqx.Module):
             The frequencies corresponding to the sky model data. Should
             have shape (N_freqs,).
 
-        Returns
-        -------
-        Sky
-            A Sky object with the given alm and frequencies.
-
         """
         self._sky_alm = jnp.asarray(sky_alm)
         self.freqs = freqs
