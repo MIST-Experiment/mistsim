@@ -227,11 +227,11 @@ css = [
 
 [[package]]
 name = "certifi"
-version = "2026.1.4"
+version = "2026.2.25"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e0/2d/a891ca51311197f6ad14a7ef42e2399f36cf2f9bd44752b3dc4eab60fdc5/certifi-2026.1.4.tar.gz", hash = "sha256:ac726dd470482006e014ad384921ed6438c457018f4b3d204aea4281258b2120", size = 154268, upload-time = "2026-01-04T02:42:41.825Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/af/2d/7bf41579a8986e348fa033a31cdd0e4121114f6bce2457e8876010b092dd/certifi-2026.2.25.tar.gz", hash = "sha256:e887ab5cee78ea814d3472169153c2d12cd43b14bd03329a39a9c6e2e80bfba7", size = 155029, upload-time = "2026-02-25T02:54:17.342Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e6/ad/3cc14f097111b4de0040c83a525973216457bbeeb63739ef1ed275c1c021/certifi-2026.1.4-py3-none-any.whl", hash = "sha256:9943707519e4add1115f44c2bc244f782c0249876bf51b6599fee1ffbedd685c", size = 152900, upload-time = "2026-01-04T02:42:40.15Z" },
+    { url = "https://files.pythonhosted.org/packages/9a/3c/c17fb3ca2d9c3acff52e30b309f538586f9f5b9c9cf454f3845fc9af4881/certifi-2026.2.25-py3-none-any.whl", hash = "sha256:027692e4402ad994f1c42e52a4997a9763c646b73e4096e4d5d6db8af1d6f0fa", size = 153684, upload-time = "2026-02-25T02:54:15.766Z" },
 ]
 
 [[package]]
@@ -510,7 +510,7 @@ toml = [
 [[package]]
 name = "croissant-sim"
 version = "5.0.0"
-source = { directory = "../../../projects/croissant" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "astropy", version = "6.1.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "astropy", version = "7.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -523,30 +523,9 @@ dependencies = [
     { name = "s2fft", version = "1.2.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "s2fft", version = "1.4.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "astropy" },
-    { name = "equinox" },
-    { name = "jax" },
-    { name = "lunarsky" },
-    { name = "numpy" },
-    { name = "s2fft" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "healpy", specifier = ">=1.19.0" },
-    { name = "ipympl", specifier = ">=0.10.0" },
-    { name = "jupyterlab", specifier = ">=4.5.4" },
-    { name = "jupyterlab-vim", specifier = ">=4.1.4" },
-    { name = "matplotlib", specifier = ">=3.10.8" },
-    { name = "pre-commit", specifier = ">=4.5.1" },
-    { name = "pygdsm", specifier = ">=1.6.4" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-timeout" },
-    { name = "ruff" },
+sdist = { url = "https://files.pythonhosted.org/packages/f6/cd/57463e2be117ca4d757f84e12571b87facf23dbe418b16e1938e52c7ac48/croissant_sim-5.0.0.tar.gz", hash = "sha256:30c6484a7ef119f9867d5a4effc64c8d1acbb96744d8ee4e32c58327bf6928c0", size = 18685457, upload-time = "2026-02-25T16:47:28.757Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/be/26/335da8b954542efde5347418045776ad2eb1cd4f8cf9631f77bf1b56e474/croissant_sim-5.0.0-py3-none-any.whl", hash = "sha256:993f6883b1b2810110ff7185329e5eb53f3359f50ed72e902086bdd5d2f7845d", size = 20897, upload-time = "2026-02-25T16:47:31.183Z" },
 ]
 
 [[package]]
@@ -564,10 +543,10 @@ wheels = [
 
 [[package]]
 name = "cuda-pathfinder"
-version = "1.3.4"
+version = "1.3.5"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b8/5e/db279a3bfbd18d59d0598922a3b3c1454908d0969e8372260afec9736376/cuda_pathfinder-1.3.4-py3-none-any.whl", hash = "sha256:fb983f6e0d43af27ef486e14d5989b5f904ef45cedf40538bfdcbffa6bb01fb2", size = 30878, upload-time = "2026-02-11T18:50:31.008Z" },
+    { url = "https://files.pythonhosted.org/packages/ca/b5/e4056e4058fb56519fcddf1face6fe3ff2398953b41615fafe9fb1540bf2/cuda_pathfinder-1.3.5-py3-none-any.whl", hash = "sha256:6c88220f8637cb35d2a75c620d72efebf683b248b923713d8fbe235844c1a4b9", size = 33711, upload-time = "2026-02-23T18:34:27.253Z" },
 ]
 
 [[package]]
@@ -1351,7 +1330,7 @@ wheels = [
 
 [[package]]
 name = "jupyterlab"
-version = "4.5.4"
+version = "4.5.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "async-lru" },
@@ -1369,9 +1348,9 @@ dependencies = [
     { name = "tornado" },
     { name = "traitlets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7c/6b/21af7c0512bdf67e0c54c121779a1f2a97a164a7657e13fced79db8fa5a0/jupyterlab-4.5.4.tar.gz", hash = "sha256:c215f48d8e4582bd2920ad61cc6a40d8ebfef7e5a517ae56b8a9413c9789fdfb", size = 23943597, upload-time = "2026-02-11T00:26:55.308Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6e/2d/953a5612a34a3c799a62566a548e711d103f631672fd49650e0f2de80870/jupyterlab-4.5.5.tar.gz", hash = "sha256:eac620698c59eb810e1729909be418d9373d18137cac66637141abba613b3fda", size = 23968441, upload-time = "2026-02-23T18:57:34.339Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f5/9f/a70972ece62ead2d81acc6223188f6d18a92f665ccce17796a0cdea4fcf5/jupyterlab-4.5.4-py3-none-any.whl", hash = "sha256:cc233f70539728534669fb0015331f2a3a87656207b3bb2d07916e9289192f12", size = 12391867, upload-time = "2026-02-11T00:26:51.23Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/52/372d3494766d690dfdd286871bf5f7fb9a6c61f7566ccaa7153a163dd1df/jupyterlab-4.5.5-py3-none-any.whl", hash = "sha256:a35694a40a8e7f2e82f387472af24e61b22adcce87b5a8ab97a5d9c486202a6d", size = 12446824, upload-time = "2026-02-23T18:57:30.398Z" },
 ]
 
 [[package]]
@@ -1644,7 +1623,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "croissant-sim", directory = "../../../projects/croissant" },
+    { name = "croissant-sim", specifier = ">=5.0.0" },
     { name = "equinox" },
     { name = "jax" },
     { name = "numpy" },
