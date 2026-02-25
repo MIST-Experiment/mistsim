@@ -52,7 +52,7 @@ addopts = [
 
 [tool.ruff]
 line-length = 79
-exclude = ["examples/data"]
+exclude = ["notebooks/data"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
