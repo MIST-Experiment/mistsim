@@ -19,7 +19,7 @@ classifiers = [
 dependencies = [
   "croissant-sim>=5.0.0",
   "equinox",
-  "jax",
+  "jax<0.6.0",
   "numpy",
   "s2fft",
 ]
