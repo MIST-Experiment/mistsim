@@ -29,8 +29,8 @@ def sim():
     tsky = tsky[:, None] * jnp.ones((1, npix))
     sky = ms.Sky(tsky, freqs)
 
-    beam_map = jnp.ones((freqs.size, npix))
-    beam = ms.Beam(beam_map, freqs, sampling="healpix")
+    beam_map = jnp.ones((freqs.size, 181, 360))
+    beam = ms.Beam(beam_map, freqs, sampling="mwss")
 
     s = ms.Simulator(beam, sky, times.jd, freqs, lon, lat, Tgnd=300)
     return s
@@ -71,6 +71,7 @@ def test_forward(sim):
     sky_hp = sky_hp.reshape(-1, 1)
 
     beam_alm = sim.compute_beam_eq()
+    beam_alm = cro.utils.reduce_lmax(beam_alm, lmax)
     phases = sim.phases
 
     expected_raw = sim.sim()

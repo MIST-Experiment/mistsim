@@ -66,6 +66,8 @@ def _forward(sky_hp, beam_alm, phases):
     nfreq = beam_alm.shape[0]
     sky_hp = sky_hp.reshape(nfreq, -1)
     sky_alm = hp_to_s2fft(sky_hp)
+
+    # convolve with croissant
     wf = cro.simulator.convolve(beam_alm, sky_alm, phases)
     lmax = cro.utils.lmax_from_shape(beam_alm.shape)
     # beam_alm is already horizon masked so norm is above horizon only
@@ -95,13 +97,13 @@ def make_Amat(sim):
 
     """
     beam_alm = sim.compute_beam_eq()
+    beam_alm = cro.utils.reduce_lmax(beam_alm, sim.lmax)
     phases = sim.phases
 
     matvec = partial(_forward, beam_alm=beam_alm, phases=phases)
 
     # need a dummy input of same shape as x vector to make transpose
-    lmax = cro.utils.lmax_from_shape(beam_alm.shape)
-    nalm = (lmax+1) * (lmax+2) // 2
+    nalm = (sim.lmax+1) * (sim.lmax+2) // 2
     nfreqs = sim.freqs.size
     x_dummy = jnp.zeros((nfreqs * nalm, 1), dtype=complex)
     _, transpose = jax.vjp(matvec, x_dummy)
