@@ -4,7 +4,7 @@ import croissant as cro
 import jax
 import jax.numpy as jnp
 import numpy as np
-import s2ftt
+import s2fft
 import scipy.sparse.linalg as sla
 
 
@@ -27,19 +27,22 @@ def hp_to_s2fft(sky_hp):
         in the s2fft/croissant ordering. Shape is (lmax+1, 2*lmax+1).
 
     """
-    lmax = cro.utils.lmax_from_shape(sky_hp.shape)
-    r = partial(s2ftt.sampling.reindex.flm_hp_to_2d_fast, L=lmax+1)
+    nalm = sky_hp.shape[-1]
+    num = -3 + np.sqrt(1 + 8 * nalm)
+    lmax = np.floor(num / 2).astype(int)
+    r = partial(s2fft.sampling.reindex.flm_hp_to_2d_fast, L=lmax+1)
     return jax.vmap(r)(sky_hp)
 
 @jax.jit
 def _forward(sky_hp, beam_alm, phases):
     """
-    Helper function to define the forward operator for mapmaking.
+    The forward operator for mapmaking.
 
-    The output `forward` function is essentially the same as
-    `croissant.simulator.conolve`, but wants the beam and phases
-    already defined and for the `sky_alm_hp` to be in healpy convention
-    and raveled over the frequency axis.
+    This returns the ground-loss corrected antenna temperature at each
+    time and frequency, as a column vector. Mostly a wrapper around
+    cro.simulator.convolve, but lets us input sky as a healpy-ordered
+    column vector.
+
 
     Parameters
     ----------
@@ -56,18 +59,24 @@ def _forward(sky_hp, beam_alm, phases):
 
     Returns
     -------
-    jax.Array
-        The timestream data, with shape (ntimes,) or (ntimes, nfreq) if
-        the input alms have a frequency axis.
+    y : jax.Array
+        The waterfall data, with shape (n_freq * ntimes, 1)
 
     """
     nfreq = beam_alm.shape[0]
-    sky_hp = sky_hp.reshape((nfreq, -1))
+    sky_hp = sky_hp.reshape(nfreq, -1)
     sky_alm = hp_to_s2fft(sky_hp)
-    return cro.simulator.convolve(beam_alm, sky_alm, phases)
+    wf = cro.simulator.convolve(beam_alm, sky_alm, phases)
+    lmax = cro.utils.lmax_from_shape(beam_alm.shape)
+    # beam_alm is already horizon masked so norm is above horizon only
+    beam_norm = beam_alm[:, 0, lmax] * jnp.sqrt(4 * jnp.pi)
+    wf /= beam_norm[None, :]
+    y = wf.ravel()[:, None]
+    return y
 
 def _adjoint(v, transpose):
-    return np.asarray(transpose(v)[0])
+    vcol = jnp.asarray(v).reshape(-1, 1)
+    return np.asarray(transpose(vcol)[0])
 
 def make_Amat(sim):
     """
@@ -94,12 +103,14 @@ def make_Amat(sim):
     lmax = cro.utils.lmax_from_shape(beam_alm.shape)
     nalm = (lmax+1) * (lmax+2) // 2
     nfreqs = sim.freqs.size
-    x_dummy = jnp.zeros((nfreqs * nalm,), dtype=complex)
+    x_dummy = jnp.zeros((nfreqs * nalm, 1), dtype=complex)
     _, transpose = jax.vjp(matvec, x_dummy)
 
     rmatvec = partial(_adjoint, transpose=transpose)
 
     ntimes = sim.times_jd.size
-    shape = (ntimes, nfreqs * nalm)
-    A = sla.LinearOperator(shape, matvec=matvec, rmatvec=rmatvec)
+    shape = (nfreqs * ntimes, nfreqs * nalm)
+    A = sla.LinearOperator(
+        shape, matvec=matvec, rmatvec=rmatvec, dtype=complex
+    )
     return A
