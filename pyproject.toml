@@ -73,4 +73,5 @@ dev = [
   "pytest-cov",
   "pytest-timeout",
   "ruff",
+  "s2fft>=1.2.2",
 ]

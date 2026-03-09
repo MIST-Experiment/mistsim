@@ -7,8 +7,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 import s2fft
-from astropy.time import Time
 from astropy import units as u
+from astropy.time import Time
 
 import mistsim as ms
 
