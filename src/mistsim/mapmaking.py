@@ -8,18 +8,21 @@ import scipy.sparse.linalg as sla
 
 
 def _unpack_single_freq(x_freq, lmax):
-    """Unpacks a single frequency to avoid massive JAX unrolling."""
+    """
+    Map 1d-vector of alm in real/imag to s2fft 2d array of complex alm.
+    """
     N_per_freq = (lmax + 1)**2
     N_pos_m = (N_per_freq - (lmax + 1)) // 2
 
-    m0_real = x_freq[: lmax + 1]
-    pos_m_real = x_freq[lmax + 1 : lmax + 1 + N_pos_m]
-    pos_m_imag = x_freq[lmax + 1 + N_pos_m :]
+    m0_real = x_freq[: lmax + 1]  # m=0 modes
+    pos_m_real = x_freq[lmax + 1 : lmax + 1 + N_pos_m]  # m>0 real parts
+    pos_m_imag = x_freq[lmax + 1 + N_pos_m :] # m>0 imag parts
 
     flm_s2fft = jnp.zeros((lmax + 1, 2 * lmax + 1), dtype=jnp.complex128)
-    flm_s2fft = flm_s2fft.at[:, lmax].set(m0_real + 0j)
+    flm_s2fft = flm_s2fft.at[:, lmax].set(m0_real + 0j)  # set m=0 modes
 
-    pos_m_complex = pos_m_real + 1j * pos_m_imag
+    # complex m > 0 modes normalized by 1/root(2) to preserve variance
+    pos_m_complex = 1/jnp.sqrt(2) * (pos_m_real + 1j * pos_m_imag)
 
     current_idx = 0
     for m in range(1, lmax + 1):
@@ -35,6 +38,10 @@ def _unpack_single_freq(x_freq, lmax):
     return flm_s2fft
 
 def unpack_real_to_s2fft(x_real, lmax, Nfreq=1):
+    """
+    Multi-frequency wapper around _unpack_single_freq to reshape the
+    input and map over frequencies.
+    """
     N_per_freq = (lmax + 1)**2
     # Reshape to (Nfreq, N_per_freq) so we can map over frequencies
     x_reshaped = jnp.ravel(x_real).reshape(Nfreq, N_per_freq)
@@ -45,13 +52,20 @@ def unpack_real_to_s2fft(x_real, lmax, Nfreq=1):
 
 
 def _pack_single_freq(flm_freq, lmax):
-    m0_real = jnp.real(flm_freq[:, lmax])
+    """
+    Map s2fft 2d array of complex alm to 1d-vector of alm in real/imag
+    for a single frequency.
+    """
+    m0_real = jnp.real(flm_freq[:, lmax])  # m=0 modes are purely real
 
+    # complex m > 0 modes
     pos_m_complex = []
     for m in range(1, lmax + 1):
         pos_m_complex.append(flm_freq[m:, lmax + m])
 
-    pos_m_complex = jnp.concatenate(pos_m_complex)
+    # multiply by root(2) to preserve variance when going back to real/imag
+    pos_m_complex = jnp.sqrt(2) * jnp.concatenate(pos_m_complex)
+
     pack_alm = jnp.concatenate(
         [m0_real, jnp.real(pos_m_complex), jnp.imag(pos_m_complex)]
     )

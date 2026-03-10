@@ -94,6 +94,31 @@ def test_A(sim):
     assert A_wfall.shape == sim_wfall.shape
     assert jnp.allclose(A_wfall, sim_wfall)
 
+def test_Alinear(sim):
+    sky_alm = sim.sky.compute_alm_eq(world="earth")
+    x_real = ms.mapmaking.pack_s2fft_to_real(sky_alm)
+    Amat = ms.mapmaking.make_Amat(sim)
+
+    xzeros = jnp.zeros_like(x_real)
+    yzeros = Amat @ xzeros
+    assert jnp.allclose(yzeros, 0), "A @ 0 should be 0"
+
+    rng = np.random.default_rng(0)
+    x1 = rng.standard_normal(x_real.shape)
+    x2 = rng.standard_normal(x_real.shape)
+    ysum = Amat @ (x1 + x2)
+    y1 = Amat @ x1
+    y2 = Amat @ x2
+    assert jnp.allclose(ysum, y1 + y2)
+
+    scalar = 42
+    yscaled = Amat @ (scalar * x1)
+    y1_scaled = scalar * (Amat @ x1)
+    assert jnp.allclose(yscaled, y1_scaled)
+    yscaled2 = Amat @ (scalar * x2)
+    y2_scaled = scalar * (Amat @ x2)
+    assert jnp.allclose(yscaled2, y2_scaled)
+
 def test_adjoint(sim):
     """
     Ensures that Amat.rmatvec() correctly computes the conjugate transpose.
