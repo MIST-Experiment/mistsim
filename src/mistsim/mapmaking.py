@@ -4,9 +4,38 @@ import croissant as cro
 import jax
 import jax.numpy as jnp
 import numpy as np
-import s2fft
 import scipy.sparse.linalg as sla
 
+
+@partial(jax.jit, static_argnums=(1))
+def flm_hp_to_2d_fast(flm_hp: jnp.ndarray, L: int) -> jnp.ndarray:
+    """
+    Converts from HEALPix (healpy) indexed harmonic coefficients to 2D indexed
+    coefficients (JAX).
+
+    Replacing the original s2fft function with a vjp safe one
+
+    """
+    flm_2d = jnp.zeros((L, 2 * L - 1), dtype=flm_hp.dtype)
+    m_indices, el_indices = (
+        np.triu_indices(n=L, k=1, m=L) + np.array([[1], [0]])
+    )
+
+    # pass unique_indices=True to allow JAX to linearly transpose
+    flm_2d = flm_2d.at[:L, L - 1].set(
+        flm_hp[:L],
+        unique_indices=True
+    )
+    flm_2d = flm_2d.at[el_indices, L - 1 + m_indices].set(
+        flm_hp[L:],
+        unique_indices=True
+    )
+    flm_2d = flm_2d.at[el_indices, L - 1 - m_indices].set(
+        (-1) ** m_indices * flm_hp[L:].conj(),
+        unique_indices=True
+    )
+
+    return flm_2d
 
 @jax.jit
 def hp_to_s2fft(sky_hp):
@@ -30,7 +59,7 @@ def hp_to_s2fft(sky_hp):
     nalm = sky_hp.shape[-1]
     num = -3 + np.sqrt(1 + 8 * nalm)
     lmax = np.floor(num / 2).astype(int)
-    r = partial(s2fft.sampling.reindex.flm_hp_to_2d_fast, L=lmax+1)
+    r = partial(flm_hp_to_2d_fast, L=lmax+1)
     return jax.vmap(r)(sky_hp)
 
 @jax.jit
@@ -76,9 +105,39 @@ def _forward(sky_hp, beam_alm, phases):
     y = wf.ravel()[:, None]
     return y
 
-def _adjoint(v, transpose):
-    vcol = jnp.asarray(v).reshape(-1, 1)
-    return np.asarray(transpose(vcol)[0])
+@jax.jit
+def _matvec_C(sky_hp, beam_alm, phases):
+    xr = sky_hp.real.astype(complex)
+    xi = sky_hp.imag.astype(complex)
+    outr = _forward(xr, beam_alm, phases)
+    outi = _forward(xi, beam_alm, phases)
+    return outr + 1j * outi
+
+@jax.jit
+def _matvec_R(sky_hp_r, beam_alm, phases):
+    sky_hp = sky_hp_r.astype(complex)
+    return _forward(sky_hp, beam_alm, phases).real
+
+@jax.jit
+def _matvec_I(sky_hp_i, beam_alm, phases):
+    sky_hp = sky_hp_i.astype(complex)
+    return _forward(sky_hp, beam_alm, phases).imag
+
+def _adjoint(v, transpose_R, transpose_I):
+    vcol = v.reshape(-1, 1)
+    vr = vcol.real
+    vi = vcol.imag
+
+    AR_T_vr = transpose_R(vr)[0]
+    AI_T_vi = transpose_I(vi)[0]
+    AR_T_vi = transpose_R(vi)[0]
+    AI_T_vr = transpose_I(vr)[0]
+
+    out_r = AR_T_vr + AI_T_vi
+    out_i = AR_T_vi - AI_T_vr
+
+    outc = out_r + 1j * out_i
+    return outc.ravel()
 
 def make_Amat(sim):
     """
@@ -100,19 +159,102 @@ def make_Amat(sim):
     beam_alm = cro.utils.reduce_lmax(beam_alm, sim.lmax)
     phases = sim.phases
 
-    matvec = partial(_forward, beam_alm=beam_alm, phases=phases)
-
-    # need a dummy input of same shape as x vector to make transpose
     nalm = (sim.lmax+1) * (sim.lmax+2) // 2
     nfreqs = sim.freqs.size
-    x_dummy = jnp.zeros((nfreqs * nalm, 1), dtype=complex)
-    _, transpose = jax.vjp(matvec, x_dummy)
-
-    rmatvec = partial(_adjoint, transpose=transpose)
-
     ntimes = sim.times_jd.size
     shape = (nfreqs * ntimes, nfreqs * nalm)
+
+    fwd_R = partial(_matvec_R, beam_alm=beam_alm, phases=phases)
+    fwd_I = partial(_matvec_I, beam_alm=beam_alm, phases=phases)
+
+    x_dummy = jnp.zeros((nfreqs * nalm, 1), dtype=float)
+    transpose_R = jax.linear_transpose(fwd_R, x_dummy)
+    transpose_I = jax.linear_transpose(fwd_I, x_dummy)
+
+    matvec = partial(_matvec_C, beam_alm=beam_alm, phases=phases)
+    rmatvec = partial(
+        _adjoint, transpose_R=transpose_R, transpose_I=transpose_I
+    )
+
     A = sla.LinearOperator(
         shape, matvec=matvec, rmatvec=rmatvec, dtype=complex
     )
     return A
+
+def make_SAH(Sdiag, Amat):
+    """
+    Create the linear operator representing S @ A^H where S is a
+    a diagonal prior covariance matrix.
+
+    Parameters
+    ----------
+    Sdiag : array-like
+        The diagonal of the prior covariance matrix, with shape
+        (nfreqs * nalm,).
+    Amat : scipy.sparse.linalg.LinearOperator
+        The A matrix for mapmaking, as a sparse linear operator.
+        Expected shape is (nfreqs * ntimes, nfreqs * nalm).
+
+    Returns
+    -------
+    SAH : scipy.sparse.linalg.LinearOperator
+        The linear operator representing S @ A^H, with shape
+        (nfreqs * nalm, nfreqs * ntimes).
+
+    """
+    SAH = sla.LinearOperator(
+        shape=(Amat.shape[1], Amat.shape[0]),
+        matvec=lambda v: Sdiag[:, None] * Amat.rmatvec(v),
+        rmatvec=lambda v: Amat.matvec(Sdiag[:, None] * v),
+        dtype=Amat.dtype
+    )
+    return SAH
+
+def _Atilde_matvec(v, Ndiag, Amat, Sdiag):
+    Nm12 = 1 / np.sqrt(Ndiag)
+    S12 = np.sqrt(Sdiag)
+    if v.ndim == 2:
+        Nm12 = Nm12[:, None]
+        S12 = S12[:, None]
+    return Nm12 * Amat.matvec(S12 * v)
+
+def _Atilde_rmatvec(v, Ndiag, Amat, Sdiag):
+    Nm12 = 1 / np.sqrt(Ndiag)
+    S12 = np.sqrt(Sdiag)
+    if v.ndim == 2:
+        Nm12 = Nm12[:, None]
+        S12 = S12[:, None]
+    return S12 * Amat.rmatvec(Nm12 * v)
+
+def make_Atilde(Ndiag, Amat, Sdiag):
+    """
+    Create the linear operator representing the design matrix in the
+    whitened least squares problem, Atilde = N^{-1/2} @ A @ S^{1/2}.
+
+    Parameters
+    ----------
+    Ndiag : array-like
+        The diagonal of the noise covariance matrix, with shape
+        (nfreqs * ntimes,).
+    Amat : scipy.sparse.linalg.LinearOperator
+        The A matrix for mapmaking, as a sparse linear operator.
+        Expected shape is (nfreqs * ntimes, nfreqs * nalm).
+    Sdiag : array-like
+        The diagonal of the prior covariance matrix, with shape
+        (nfreqs * nalm,).
+
+    Returns
+    -------
+    Atilde : scipy.sparse.linalg.LinearOperator
+        The linear operator representing the design matrix in the
+        whitened least squares problem, with shape
+        (nfreqs * ntimes, nfreqs * nalm).
+
+    """
+    Atilde = sla.LinearOperator(
+        shape=Amat.shape,
+        matvec=lambda v: _Atilde_matvec(v, Ndiag, Amat, Sdiag),
+        rmatvec=lambda v: _Atilde_rmatvec(v, Ndiag, Amat, Sdiag),
+        dtype=Amat.dtype,
+    )
+    return Atilde

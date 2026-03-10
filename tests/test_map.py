@@ -108,3 +108,35 @@ def test_A(sim):
 
     assert A_wfall.shape == sim_wfall.shape
     assert jnp.allclose(A_wfall, sim_wfall)
+
+def test_adjoint(sim):
+    """
+    Ensures that Amat.rmatvec() correctly computes the conjugate transpose.
+    """
+    Amat = ms.mapmaking.make_Amat(sim)
+    rng = np.random.default_rng(0)
+
+    xr = rng.standard_normal(Amat.shape[1])
+    xi = 1j * rng.standard_normal(Amat.shape[1])
+    x = xr + xi
+    yr = rng.standard_normal(Amat.shape[0])
+    yi = 1j * rng.standard_normal(Amat.shape[0])
+    y = yr + yi
+
+    Ax = Amat.matvec(x)
+    Ahy = Amat.rmatvec(y)
+
+    inner1 = np.vdot(Ax, y)
+    inner2 = np.vdot(x, Ahy)
+
+    # Assert they are equal up to standard floating-point precision
+    np.testing.assert_allclose(
+        inner1.real, inner2.real,
+        rtol=1e-5, atol=1e-8,
+        err_msg="Real parts of the inner products do not match!"
+    )
+    np.testing.assert_allclose(
+        inner1.imag, inner2.imag,
+        rtol=1e-5, atol=1e-8,
+        err_msg="Imaginary parts of the inner products do not match!"
+    )
