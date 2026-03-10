@@ -7,78 +7,79 @@ import numpy as np
 import scipy.sparse.linalg as sla
 
 
-@partial(jax.jit, static_argnums=(1))
-def flm_hp_to_2d_fast(flm_hp: jnp.ndarray, L: int) -> jnp.ndarray:
-    """
-    Converts from HEALPix (healpy) indexed harmonic coefficients to 2D indexed
-    coefficients (JAX).
+def _unpack_single_freq(x_freq, lmax):
+    """Unpacks a single frequency to avoid massive JAX unrolling."""
+    N_per_freq = (lmax + 1)**2
+    N_pos_m = (N_per_freq - (lmax + 1)) // 2
 
-    Replacing the original s2fft function with a vjp safe one
+    m0_real = x_freq[: lmax + 1]
+    pos_m_real = x_freq[lmax + 1 : lmax + 1 + N_pos_m]
+    pos_m_imag = x_freq[lmax + 1 + N_pos_m :]
 
-    """
-    flm_2d = jnp.zeros((L, 2 * L - 1), dtype=flm_hp.dtype)
-    m_indices, el_indices = (
-        np.triu_indices(n=L, k=1, m=L) + np.array([[1], [0]])
-    )
+    flm_s2fft = jnp.zeros((lmax + 1, 2 * lmax + 1), dtype=jnp.complex128)
+    flm_s2fft = flm_s2fft.at[:, lmax].set(m0_real + 0j)
 
-    # pass unique_indices=True to allow JAX to linearly transpose
-    flm_2d = flm_2d.at[:L, L - 1].set(
-        flm_hp[:L],
-        unique_indices=True
-    )
-    flm_2d = flm_2d.at[el_indices, L - 1 + m_indices].set(
-        flm_hp[L:],
-        unique_indices=True
-    )
-    flm_2d = flm_2d.at[el_indices, L - 1 - m_indices].set(
-        (-1) ** m_indices * flm_hp[L:].conj(),
-        unique_indices=True
-    )
+    pos_m_complex = pos_m_real + 1j * pos_m_imag
 
-    return flm_2d
+    current_idx = 0
+    for m in range(1, lmax + 1):
+        n_ell = lmax + 1 - m
+        m_slice = pos_m_complex[current_idx : current_idx + n_ell]
+        m_conj_slice = (-1)**m * jnp.conj(m_slice)
+
+        flm_s2fft = flm_s2fft.at[m:, lmax + m].set(m_slice)
+        flm_s2fft = flm_s2fft.at[m:, lmax - m].set(m_conj_slice)
+
+        current_idx += n_ell
+
+    return flm_s2fft
+
+def unpack_real_to_s2fft(x_real, lmax, Nfreq=1):
+    N_per_freq = (lmax + 1)**2
+    # Reshape to (Nfreq, N_per_freq) so we can map over frequencies
+    x_reshaped = jnp.ravel(x_real).reshape(Nfreq, N_per_freq)
+
+    # vmap over the 0th axis (frequencies)
+    unpack_vmap = jax.vmap(_unpack_single_freq, in_axes=(0, None))
+    return unpack_vmap(x_reshaped, lmax)
+
+
+def _pack_single_freq(flm_freq, lmax):
+    m0_real = jnp.real(flm_freq[:, lmax])
+
+    pos_m_complex = []
+    for m in range(1, lmax + 1):
+        pos_m_complex.append(flm_freq[m:, lmax + m])
+
+    pos_m_complex = jnp.concatenate(pos_m_complex)
+    pack_alm = jnp.concatenate(
+        [m0_real, jnp.real(pos_m_complex), jnp.imag(pos_m_complex)]
+    )
+    return pack_alm
+
+def pack_s2fft_to_real(flm_s2fft):
+    Nfreq, L, _ = flm_s2fft.shape
+    lmax = L - 1
+    # vmap the packing over the frequency axis
+    pack_vmap = jax.vmap(_pack_single_freq, in_axes=(0, None))
+    return jnp.ravel(pack_vmap(flm_s2fft, lmax))
 
 @jax.jit
-def hp_to_s2fft(sky_hp):
-    """
-    Convert a healpy-style array of alm coefficients to the s2fft
-    convention.
-
-    Parameters
-    ----------
-    sky_hp : jax.Array
-        The harmonic coefficients of the sky in equatorial coordinates,
-        in the usual healpy ordering. Shape is (nfreq, nalm)
-
-    Returns
-    -------
-    jax.Array
-        The harmonic coefficients of the sky in equatorial coordinates,
-        in the s2fft/croissant ordering. Shape is (lmax+1, 2*lmax+1).
-
-    """
-    nalm = sky_hp.shape[-1]
-    num = -3 + np.sqrt(1 + 8 * nalm)
-    lmax = np.floor(num / 2).astype(int)
-    r = partial(flm_hp_to_2d_fast, L=lmax+1)
-    return jax.vmap(r)(sky_hp)
-
-@jax.jit
-def _forward(sky_hp, beam_alm, phases):
+def _forward_jax(x, beam_alm, phases):
     """
     The forward operator for mapmaking.
 
     This returns the ground-loss corrected antenna temperature at each
     time and frequency, as a column vector. Mostly a wrapper around
-    cro.simulator.convolve, but lets us input sky as a healpy-ordered
-    column vector.
+    cro.simulator.convolve, but lets us input sky with only the m>=0
+    modes, split into real/imag parts.
 
 
     Parameters
     ----------
-    sky_hp : jax.Array
-        The harmonic coefficients of the sky in equatorial coordinates,
-        in healpy ordering and raveled over the frequency axis. Shape
-        is (nfreq * nalm, 1) where nalm = (lmax+1) * (lmax+2) // 2.
+    x : jax.Array
+        The input sky ordered like Healpy but split into real and
+        imaginary parts, with shape (nfreqs * nalm,).
     beam_alm : jax.Array
         The harmonic coefficients of the beam in equatorial
         coordinates, in the usual s2fft/croissant ordering.
@@ -93,51 +94,24 @@ def _forward(sky_hp, beam_alm, phases):
 
     """
     nfreq = beam_alm.shape[0]
-    sky_hp = sky_hp.reshape(nfreq, -1)
-    sky_alm = hp_to_s2fft(sky_hp)
+    lmax = cro.utils.lmax_from_shape(beam_alm.shape)
+    sky_alm = unpack_real_to_s2fft(x, lmax, Nfreq=nfreq)
 
     # convolve with croissant
     wf = cro.simulator.convolve(beam_alm, sky_alm, phases)
-    lmax = cro.utils.lmax_from_shape(beam_alm.shape)
     # beam_alm is already horizon masked so norm is above horizon only
     beam_norm = beam_alm[:, 0, lmax] * jnp.sqrt(4 * jnp.pi)
     wf /= beam_norm[None, :]
     y = wf.ravel()[:, None]
     return y
 
-@jax.jit
-def _matvec_C(sky_hp, beam_alm, phases):
-    xr = sky_hp.real.astype(complex)
-    xi = sky_hp.imag.astype(complex)
-    outr = _forward(xr, beam_alm, phases)
-    outi = _forward(xi, beam_alm, phases)
-    return outr + 1j * outi
+def _forward(x, beam_alm, phases):
+    xjax = jnp.asarray(x)
+    return np.asarray(_forward_jax(xjax, beam_alm, phases)).ravel()
 
-@jax.jit
-def _matvec_R(sky_hp_r, beam_alm, phases):
-    sky_hp = sky_hp_r.astype(complex)
-    return _forward(sky_hp, beam_alm, phases).real
-
-@jax.jit
-def _matvec_I(sky_hp_i, beam_alm, phases):
-    sky_hp = sky_hp_i.astype(complex)
-    return _forward(sky_hp, beam_alm, phases).imag
-
-def _adjoint(v, transpose_R, transpose_I):
-    vcol = v.reshape(-1, 1)
-    vr = vcol.real
-    vi = vcol.imag
-
-    AR_T_vr = transpose_R(vr)[0]
-    AI_T_vi = transpose_I(vi)[0]
-    AR_T_vi = transpose_R(vi)[0]
-    AI_T_vr = transpose_I(vr)[0]
-
-    out_r = AR_T_vr + AI_T_vi
-    out_i = AR_T_vi - AI_T_vr
-
-    outc = out_r + 1j * out_i
-    return outc.ravel()
+def _adjoint(y, transpose):
+    yjax = jnp.asarray(y).reshape(-1, 1).astype(jnp.complex128)
+    return np.asarray(transpose(yjax)[0]).ravel()
 
 def make_Amat(sim):
     """
@@ -159,25 +133,21 @@ def make_Amat(sim):
     beam_alm = cro.utils.reduce_lmax(beam_alm, sim.lmax)
     phases = sim.phases
 
-    nalm = (sim.lmax+1) * (sim.lmax+2) // 2
+    nalm = (sim.lmax+1) ** 2
     nfreqs = sim.freqs.size
     ntimes = sim.times_jd.size
     shape = (nfreqs * ntimes, nfreqs * nalm)
 
-    fwd_R = partial(_matvec_R, beam_alm=beam_alm, phases=phases)
-    fwd_I = partial(_matvec_I, beam_alm=beam_alm, phases=phases)
 
-    x_dummy = jnp.zeros((nfreqs * nalm, 1), dtype=float)
-    transpose_R = jax.linear_transpose(fwd_R, x_dummy)
-    transpose_I = jax.linear_transpose(fwd_I, x_dummy)
+    _fwd_jax = partial(_forward_jax, beam_alm=beam_alm, phases=phases)
+    xdummy = jnp.zeros(nfreqs * nalm, dtype=float)
+    transpose_fn = jax.linear_transpose(_fwd_jax, xdummy)
 
-    matvec = partial(_matvec_C, beam_alm=beam_alm, phases=phases)
-    rmatvec = partial(
-        _adjoint, transpose_R=transpose_R, transpose_I=transpose_I
-    )
+    matvec = partial(_forward, beam_alm=beam_alm, phases=phases)
+    rmatvec = partial(_adjoint, transpose=transpose_fn)
 
     A = sla.LinearOperator(
-        shape, matvec=matvec, rmatvec=rmatvec, dtype=complex
+        shape, matvec=matvec, rmatvec=rmatvec, dtype=np.float64
     )
     return A
 

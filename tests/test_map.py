@@ -1,12 +1,9 @@
-from functools import partial
 
 import croissant as cro
-import healpy as hp
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-import s2fft
 from astropy import units as u
 from astropy.time import Time
 
@@ -36,39 +33,30 @@ def sim():
     return s
 
 @pytest.mark.parametrize("lmax", [16, 32])
-def test_hp_to_s2fft(lmax):
-    # generate some random alm
-    rng = np.random.default_rng(0)
-    alm = s2fft.utils.signal_generator.generate_flm(rng, lmax+1, reality=True)
+def test_pack_unpack_symmetry(lmax):
+    Nfreq = 2
+    N_total = Nfreq * (lmax + 1)**2
 
-    # this is the inverse transform
-    _re = partial(s2fft.sampling.reindex.flm_2d_to_hp_fast, L=lmax+1)
-    inv = jax.vmap(_re)
+    # 1. Create a random physical (real) state vector
+    x_orig = jax.random.normal(jax.random.PRNGKey(0), (N_total,))
 
-    # one freq
-    alm1f = alm[None]
-    hp1f = inv(alm1f)
-    assert hp1f.shape == (1, hp.Alm.getsize(lmax))
-    _alm = ms.mapmaking.hp_to_s2fft(hp1f)
-    assert _alm.shape == alm1f.shape
-    assert jnp.allclose(_alm, alm1f)
+    # 2. Unpack to complex s2fft format
+    flm_complex = ms.mapmaking.unpack_real_to_s2fft(x_orig, lmax, Nfreq)
 
-    # multiple freqs
-    nfreqs = 10
-    alm_nf = jnp.repeat(alm[None], nfreqs, axis=0)
-    hp_nf = inv(alm_nf)
-    assert hp_nf.shape == (nfreqs, hp.Alm.getsize(lmax))
-    _alm = ms.mapmaking.hp_to_s2fft(hp_nf)
-    assert _alm.shape == alm_nf.shape
-    assert jnp.allclose(_alm, alm_nf)
+    # 3. Test conjugate symmetry: a(l, -m) == (-1)^m * a(l, m)*
+    for m in range(1, lmax + 1):
+        left_side = flm_complex[:, m:, lmax - m]
+        right_side = ((-1)**m) * jnp.conj(flm_complex[:, m:, lmax + m])
+        assert jnp.allclose(left_side, right_side), f"Symmetry failed at m={m}"
+
+    # 4. Pack back to 1D real vector and test losslessness
+    x_repacked = ms.mapmaking.pack_s2fft_to_real(flm_complex)
+    assert jnp.allclose(x_orig, x_repacked)
 
 def test_forward(sim):
     sky_alm = sim.sky.compute_alm_eq(world="earth")
     lmax = cro.utils.lmax_from_shape(sky_alm.shape)
-    _re = partial(s2fft.sampling.reindex.flm_2d_to_hp_fast, L=lmax+1)
-    assert sky_alm.shape == (sim.freqs.size, sim.lmax + 1, 2 * sim.lmax + 1)
-    sky_hp = jax.vmap(_re)(sky_alm)
-    sky_hp = sky_hp.reshape(-1, 1)
+    x_real = ms.mapmaking.pack_s2fft_to_real(sky_alm)
 
     beam_alm = sim.compute_beam_eq()
     beam_alm = cro.utils.reduce_lmax(beam_alm, lmax)
@@ -81,24 +69,21 @@ def test_forward(sim):
     )
 
     # out is a column vector of shape (ntimes*nfreq, 1)
-    out = ms.mapmaking._forward(sky_hp, beam_alm, phases)
-    assert out.shape == (sim.freqs.size * sim.times_jd.size, 1)
+    out = ms.mapmaking._forward(x_real, beam_alm, phases)
+    assert out.shape == (sim.freqs.size * sim.times_jd.size,)
     out2d = out.reshape(sim.times_jd.size, sim.freqs.size)
     assert np.allclose(out2d, expected)
 
 def test_A(sim):
     sky_alm = sim.sky.compute_alm_eq(world="earth")
-    lmax = cro.utils.lmax_from_shape(sky_alm.shape)
-    _re = partial(s2fft.sampling.reindex.flm_2d_to_hp_fast, L=lmax+1)
-    assert sky_alm.shape == (sim.freqs.size, sim.lmax + 1, 2 * sim.lmax + 1)
-    sky_hp = jax.vmap(_re)(sky_alm)
+    x_real = ms.mapmaking.pack_s2fft_to_real(sky_alm)
 
     Amat = ms.mapmaking.make_Amat(sim)
     ntimes = sim.times_jd.size
     nfreq = sim.freqs.size
-    assert Amat.shape == (ntimes * nfreq, sky_hp.size)
+    assert Amat.shape == (ntimes * nfreq, x_real.size)
 
-    A_wfall_rav = Amat @ sky_hp.reshape(-1, 1)
+    A_wfall_rav = Amat @ x_real
     A_wfall = A_wfall_rav.reshape(ntimes, nfreq)
     # compare with simulator
     sim_wfall = sim.sim()
@@ -116,12 +101,8 @@ def test_adjoint(sim):
     Amat = ms.mapmaking.make_Amat(sim)
     rng = np.random.default_rng(0)
 
-    xr = rng.standard_normal(Amat.shape[1])
-    xi = 1j * rng.standard_normal(Amat.shape[1])
-    x = xr + xi
-    yr = rng.standard_normal(Amat.shape[0])
-    yi = 1j * rng.standard_normal(Amat.shape[0])
-    y = yr + yi
+    x = rng.standard_normal(Amat.shape[1])
+    y = rng.standard_normal(Amat.shape[0])
 
     Ax = Amat.matvec(x)
     Ahy = Amat.rmatvec(y)
