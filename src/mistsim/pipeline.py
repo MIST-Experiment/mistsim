@@ -25,9 +25,43 @@ logger = logging.getLogger(__name__)
 
 
 def load_config(path):
-    """Load and return a YAML config dict."""
+    """Load and return a YAML config dict.
+
+    Relative paths in the config (``haslam_file``, ``beam_file``,
+    ``results_dir``) are resolved against the config file's parent
+    directory so that the pipeline works regardless of the caller's
+    working directory.
+    """
+    path = Path(path)
+    config_dir = path.resolve().parent
     with open(path) as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f)
+    _resolve_config_paths(cfg, config_dir)
+    return cfg
+
+
+def _resolve_config_paths(cfg, config_dir):
+    """Resolve relative file paths in *cfg* against *config_dir*."""
+    # sky.haslam_file
+    sky = cfg.get("sky", {})
+    if "haslam_file" in sky:
+        p = Path(sky["haslam_file"])
+        if not p.is_absolute():
+            sky["haslam_file"] = str(config_dir / p)
+
+    # sites[*].beam_file
+    for site in cfg.get("sites", []):
+        if "beam_file" in site:
+            p = Path(site["beam_file"])
+            if not p.is_absolute():
+                site["beam_file"] = str(config_dir / p)
+
+    # output.results_dir
+    out = cfg.get("output", {})
+    if "results_dir" in out:
+        p = Path(out["results_dir"])
+        if not p.is_absolute():
+            out["results_dir"] = str(config_dir / p)
 
 
 def run_name_from_config(config):
@@ -498,6 +532,7 @@ def save_results(results, path):
         cl_prior=results["cl_prior"],
         sigma2_prior=results["sigma2_prior"],
         std_alm=results["std_alm"],
+        std_map=results["std_map"],
         Sigma=results["Sigma"],
         nvec=results["nvec"],
         config_yaml=yaml.dump(results["config"]),
@@ -532,8 +567,8 @@ def generate_notebook(results, npz_path, output_path):
         Where to save the notebook.
 
     """
-    npz_path = Path(npz_path)
-    output_path = Path(output_path)
+    npz_path = Path(npz_path).resolve()
+    output_path = Path(output_path).resolve()
     nb = nbformat.v4.new_notebook()
     cells = []
 
@@ -556,6 +591,7 @@ def generate_notebook(results, npz_path, output_path):
             'sigma2_prior = float(d["sigma2_prior"])\n'
             'Sigma = d["Sigma"]\n'
             'nvec = int(d["nvec"])\n'
+            'std_map = d["std_map"]\n'
         )
     )
 
@@ -564,7 +600,7 @@ def generate_notebook(results, npz_path, output_path):
     site_names = ", ".join(s["name"] for s in cfg["sites"])
     cells.append(
         _make_md_cell(
-            f"# Diagnostics: {cfg.get('run_name', 'unnamed')}\n\n"
+            f"# Diagnostics: {results['run_name']}\n\n"
             f"**Sites:** {site_names}  \n"
             f"**lmax:** {cfg['observation']['lmax']}  \n"
             f"**nvec:** {results['nvec']}  \n"
@@ -647,14 +683,8 @@ def generate_notebook(results, npz_path, output_path):
     cells.append(_make_md_cell("## Posterior Uncertainty"))
     cells.append(
         _make_code_cell(
-            "# Load std_map from a fresh run or recompute\n"
-            "# For now, show prior-normalized alm uncertainty\n"
-            "std_abs = np.sqrt(\n"
-            "    np.real(std_alm)**2 + np.imag(std_alm)**2\n"
-            ")\n"
             "fl = np.ones(lmax + 1)\n"
             "fl[11:] = 0.0\n"
-            "std_map = hp.alm2map(hp.almxfl(std_abs, fl), nside=128)\n"
             "best_map = hp.alm2map(\n"
             "    hp.almxfl(x_rec, fl), nside=128\n"
             ")\n"

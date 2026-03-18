@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 """CLI entry point for the MIST mapmaking pipeline."""
 
-import jax
-jax.config.update("jax_enable_x64", True)
-
 import argparse
 import logging
+import os
 from pathlib import Path
+
+# Suppress JAX backend discovery noise (rocm, tpu) and enable
+# 64-bit precision before JAX is first imported by mistsim.
+os.environ.setdefault("JAX_PLATFORMS", "cpu")
+os.environ.setdefault("JAX_ENABLE_X64", "True")
 
 from mistsim.pipeline import (
     generate_notebook,
@@ -20,6 +23,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
 )
+logging.getLogger("healpy").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
@@ -69,9 +73,11 @@ def main():
         logger.info("Overriding nvec: %d -> %d", results["nvec"], args.nvec)
         results["nvec"] = args.nvec
 
-    # Output directory
+    # Output directory (paths resolved by load_config)
     out_cfg = config.get("output", {})
-    output_dir = Path(args.output_dir or out_cfg.get("results_dir", "results"))
+    output_dir = Path(
+        args.output_dir or out_cfg.get("results_dir", "results")
+    ).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     run_name = run_name_from_config(config)
