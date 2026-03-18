@@ -16,7 +16,6 @@ sites:
     lat: 79.41833
     lon: -90.74750
     alt: 150
-    horizon_max_theta: 80
     beam_az_rot: 80
 
   - name: "alma-csa2022-dip"

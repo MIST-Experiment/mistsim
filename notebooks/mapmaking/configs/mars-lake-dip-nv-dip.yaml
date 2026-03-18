@@ -16,8 +16,7 @@ sites:
     lat: 79.41833
     lon: -90.74750
     alt: 150
-    horizon_max_theta: 80
-    beam_az_rot: 80
+    beam_az_rot: 0
 
   - name: "nv-dip"
     beam_file: "notebooks/data/20240806_for_lisa/jackpot_beam2.npz"
