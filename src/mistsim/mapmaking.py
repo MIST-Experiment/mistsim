@@ -11,24 +11,24 @@ def _unpack_single_freq(x_freq, lmax):
     """
     Map 1d-vector of alm in real/imag to s2fft 2d array of complex alm.
     """
-    N_per_freq = (lmax + 1)**2
+    N_per_freq = (lmax + 1) ** 2
     N_pos_m = (N_per_freq - (lmax + 1)) // 2
 
     m0_real = x_freq[: lmax + 1]  # m=0 modes
     pos_m_real = x_freq[lmax + 1 : lmax + 1 + N_pos_m]  # m>0 real parts
-    pos_m_imag = x_freq[lmax + 1 + N_pos_m :] # m>0 imag parts
+    pos_m_imag = x_freq[lmax + 1 + N_pos_m :]  # m>0 imag parts
 
     flm_s2fft = jnp.zeros((lmax + 1, 2 * lmax + 1), dtype=jnp.complex128)
     flm_s2fft = flm_s2fft.at[:, lmax].set(m0_real + 0j)  # set m=0 modes
 
     # complex m > 0 modes normalized by 1/root(2) to preserve variance
-    pos_m_complex = 1/jnp.sqrt(2) * (pos_m_real + 1j * pos_m_imag)
+    pos_m_complex = 1 / jnp.sqrt(2) * (pos_m_real + 1j * pos_m_imag)
 
     current_idx = 0
     for m in range(1, lmax + 1):
         n_ell = lmax + 1 - m
         m_slice = pos_m_complex[current_idx : current_idx + n_ell]
-        m_conj_slice = (-1)**m * jnp.conj(m_slice)
+        m_conj_slice = (-1) ** m * jnp.conj(m_slice)
 
         flm_s2fft = flm_s2fft.at[m:, lmax + m].set(m_slice)
         flm_s2fft = flm_s2fft.at[m:, lmax - m].set(m_conj_slice)
@@ -37,12 +37,13 @@ def _unpack_single_freq(x_freq, lmax):
 
     return flm_s2fft
 
+
 def unpack_real_to_s2fft(x_real, lmax, Nfreq=1):
     """
     Multi-frequency wapper around _unpack_single_freq to reshape the
     input and map over frequencies.
     """
-    N_per_freq = (lmax + 1)**2
+    N_per_freq = (lmax + 1) ** 2
     # Reshape to (Nfreq, N_per_freq) so we can map over frequencies
     x_reshaped = jnp.ravel(x_real).reshape(Nfreq, N_per_freq)
 
@@ -71,12 +72,14 @@ def _pack_single_freq(flm_freq, lmax):
     )
     return pack_alm
 
+
 def pack_s2fft_to_real(flm_s2fft):
     Nfreq, L, _ = flm_s2fft.shape
     lmax = L - 1
     # vmap the packing over the frequency axis
     pack_vmap = jax.vmap(_pack_single_freq, in_axes=(0, None))
     return jnp.ravel(pack_vmap(flm_s2fft, lmax))
+
 
 @jax.jit
 def _forward_jax(x, beam_alm, phases):
@@ -119,13 +122,92 @@ def _forward_jax(x, beam_alm, phases):
     y = wf.ravel()[:, None]
     return y
 
+
 def _forward(x, beam_alm, phases):
     xjax = jnp.asarray(x)
     return np.asarray(_forward_jax(xjax, beam_alm, phases)).ravel()
 
+
 def _adjoint(y, transpose):
     yjax = jnp.asarray(y).reshape(-1, 1).astype(jnp.complex128)
     return np.asarray(transpose(yjax)[0]).ravel()
+
+
+def alm1d_to_hp(alm):
+    """
+    Convert packed 1D alm vector (real/imag separated) to healpy
+    complex ordering.
+
+    Parameters
+    ----------
+    alm : array-like
+        Packed alm vector with shape ((lmax+1)^2,). Layout is
+        [m=0 real, m>0 real, m>0 imag].
+
+    Returns
+    -------
+    alm_hp : jax.Array
+        Complex alm in healpy ordering with shape
+        (hp.Alm.getsize(lmax),).
+
+    """
+    s = len(alm)
+    lmax = int(np.sqrt(s) - 1)
+    hp_len = (lmax + 1) * (lmax + 2) // 2
+    alm0 = alm[: lmax + 1]
+    almre = alm[lmax + 1 : hp_len]
+    almim = alm[hp_len:]
+    almc = 1 / jnp.sqrt(2) * (almre + 1j * almim)
+    return jnp.concatenate((alm0, almc))
+
+
+def stack_As(*A_list):
+    """
+    Vertically stack an arbitrary number of LinearOperators.
+
+    Parameters
+    ----------
+    *A_list : scipy.sparse.linalg.LinearOperator
+        Two or more operators with compatible column dimensions.
+
+    Returns
+    -------
+    Astack : scipy.sparse.linalg.LinearOperator
+        Vertically stacked operator with shape (sum(M_i), N).
+
+    Raises
+    ------
+    ValueError
+        If column dimensions are incompatible.
+
+    """
+    if len(A_list) < 2:
+        raise ValueError("Need at least two operators to stack")
+    n = A_list[0].shape[1]
+    for A in A_list[1:]:
+        if A.shape[1] != n:
+            raise ValueError("Incompatible shapes")
+    m_total = sum(A.shape[0] for A in A_list)
+
+    def _matvec(v):
+        return np.concatenate([A.matvec(v) for A in A_list], axis=0)
+
+    def _rmatvec(v):
+        result = np.zeros(n, dtype=v.dtype)
+        offset = 0
+        for A in A_list:
+            m_i = A.shape[0]
+            result += A.rmatvec(v[offset : offset + m_i])
+            offset += m_i
+        return result
+
+    return sla.LinearOperator(
+        (m_total, n),
+        matvec=_matvec,
+        rmatvec=_rmatvec,
+        dtype=np.float64,
+    )
+
 
 def make_Amat(sim):
     """
@@ -147,11 +229,10 @@ def make_Amat(sim):
     beam_alm = cro.utils.reduce_lmax(beam_alm, sim.lmax)
     phases = sim.phases
 
-    nalm = (sim.lmax+1) ** 2
+    nalm = (sim.lmax + 1) ** 2
     nfreqs = sim.freqs.size
     ntimes = sim.times_jd.size
     shape = (nfreqs * ntimes, nfreqs * nalm)
-
 
     _fwd_jax = partial(_forward_jax, beam_alm=beam_alm, phases=phases)
     xdummy = jnp.zeros(nfreqs * nalm, dtype=float)
@@ -164,6 +245,7 @@ def make_Amat(sim):
         shape, matvec=matvec, rmatvec=rmatvec, dtype=np.float64
     )
     return A
+
 
 def make_SAH(Sdiag, Amat):
     """
@@ -190,9 +272,10 @@ def make_SAH(Sdiag, Amat):
         shape=(Amat.shape[1], Amat.shape[0]),
         matvec=lambda v: Sdiag[:, None] * Amat.rmatvec(v),
         rmatvec=lambda v: Amat.matvec(Sdiag[:, None] * v),
-        dtype=Amat.dtype
+        dtype=Amat.dtype,
     )
     return SAH
+
 
 def _Atilde_matvec(v, Ndiag, Amat, Sdiag):
     Nm12 = 1 / np.sqrt(Ndiag)
@@ -202,6 +285,7 @@ def _Atilde_matvec(v, Ndiag, Amat, Sdiag):
         S12 = S12[:, None]
     return Nm12 * Amat.matvec(S12 * v)
 
+
 def _Atilde_rmatvec(v, Ndiag, Amat, Sdiag):
     Nm12 = 1 / np.sqrt(Ndiag)
     S12 = np.sqrt(Sdiag)
@@ -209,6 +293,7 @@ def _Atilde_rmatvec(v, Ndiag, Amat, Sdiag):
         Nm12 = Nm12[:, None]
         S12 = S12[:, None]
     return S12 * Amat.rmatvec(Nm12 * v)
+
 
 def make_Atilde(Ndiag, Amat, Sdiag):
     """
