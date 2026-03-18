@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 """CLI entry point for the MIST mapmaking pipeline."""
 
+import jax
+jax.config.update("jax_enable_x64", True)
+
 import argparse
 import logging
 from pathlib import Path
