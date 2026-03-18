@@ -190,9 +190,14 @@ def stack_As(*A_list):
     m_total = sum(A.shape[0] for A in A_list)
 
     def _matvec(v):
-        return np.concatenate([A.matvec(v) for A in A_list], axis=0)
+        v = np.asarray(v).ravel()
+        return np.concatenate(
+            [A.matvec(v) for A in A_list],
+            axis=0,
+        )
 
     def _rmatvec(v):
+        v = np.asarray(v).ravel()
         result = np.zeros(n, dtype=v.dtype)
         offset = 0
         for A in A_list:
