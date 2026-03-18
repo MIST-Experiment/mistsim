@@ -1,5 +1,5 @@
 sky:
-  haslam_file: "notebooks/data/haslam_galactic.npz"
+  haslam_file: "../../data/haslam_galactic.npz"
   spectral_index: -2.55
   freq_range: [25, 126]
   freq_index: 0
@@ -12,15 +12,14 @@ observation:
 
 sites:
   - name: "mars-csa2022-dip"
-    beam_file: "notebooks/data/20240806_for_lisa/csa2022_beam2.npz"
+    beam_file: "../../data/20240806_for_lisa/csa2022_beam2.npz"
     lat: 79.41833
     lon: -90.74750
     alt: 150
-    horizon_max_theta: 80
     beam_az_rot: 80
 
   - name: "nv-dip"
-    beam_file: "notebooks/data/20240806_for_lisa/jackpot_beam2.npz"
+    beam_file: "../../data/20240806_for_lisa/jackpot_beam2.npz"
     lat: 37.21333
     lon: -117.09111
     alt: 0
@@ -47,5 +46,5 @@ posterior:
   seed: 1420
 
 output:
-  results_dir: "notebooks/mapmaking/results"
+  results_dir: "../results"
   generate_notebook: true
