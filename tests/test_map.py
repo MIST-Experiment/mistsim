@@ -1,9 +1,9 @@
-
 import croissant as cro
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+import scipy.sparse.linalg as sla
 from astropy import units as u
 from astropy.time import Time
 
@@ -22,7 +22,7 @@ def sim():
     lon = -90
     lat = 80
 
-    tsky = 180 * (freqs / 180)**(-2.5)
+    tsky = 180 * (freqs / 180) ** (-2.5)
     tsky = tsky[:, None] * jnp.ones((1, npix))
     sky = ms.Sky(tsky, freqs)
 
@@ -32,10 +32,11 @@ def sim():
     s = ms.Simulator(beam, sky, times.jd, freqs, lon, lat, Tgnd=300)
     return s
 
+
 @pytest.mark.parametrize("lmax", [16, 32])
 def test_pack_unpack_symmetry(lmax):
     Nfreq = 2
-    N_total = Nfreq * (lmax + 1)**2
+    N_total = Nfreq * (lmax + 1) ** 2
 
     # 1. Create a random physical (real) state vector
     x_orig = jax.random.normal(jax.random.PRNGKey(0), (N_total,))
@@ -46,12 +47,13 @@ def test_pack_unpack_symmetry(lmax):
     # 3. Test conjugate symmetry: a(l, -m) == (-1)^m * a(l, m)*
     for m in range(1, lmax + 1):
         left_side = flm_complex[:, m:, lmax - m]
-        right_side = ((-1)**m) * jnp.conj(flm_complex[:, m:, lmax + m])
+        right_side = ((-1) ** m) * jnp.conj(flm_complex[:, m:, lmax + m])
         assert jnp.allclose(left_side, right_side), f"Symmetry failed at m={m}"
 
     # 4. Pack back to 1D real vector and test losslessness
     x_repacked = ms.mapmaking.pack_s2fft_to_real(flm_complex)
     assert jnp.allclose(x_orig, x_repacked)
+
 
 def test_forward(sim):
     sky_alm = sim.sky.compute_alm_eq(world="earth")
@@ -74,6 +76,7 @@ def test_forward(sim):
     out2d = out.reshape(sim.times_jd.size, sim.freqs.size)
     assert np.allclose(out2d, expected)
 
+
 def test_A(sim):
     sky_alm = sim.sky.compute_alm_eq(world="earth")
     x_real = ms.mapmaking.pack_s2fft_to_real(sky_alm)
@@ -93,6 +96,7 @@ def test_A(sim):
 
     assert A_wfall.shape == sim_wfall.shape
     assert jnp.allclose(A_wfall, sim_wfall)
+
 
 def test_Alinear(sim):
     sky_alm = sim.sky.compute_alm_eq(world="earth")
@@ -119,6 +123,7 @@ def test_Alinear(sim):
     y2_scaled = scalar * (Amat @ x2)
     assert jnp.allclose(yscaled2, y2_scaled)
 
+
 def test_adjoint(sim):
     """
     Ensures that Amat.rmatvec() correctly computes the conjugate transpose.
@@ -137,12 +142,111 @@ def test_adjoint(sim):
 
     # Assert they are equal up to standard floating-point precision
     np.testing.assert_allclose(
-        inner1.real, inner2.real,
-        rtol=1e-5, atol=1e-8,
-        err_msg="Real parts of the inner products do not match!"
+        inner1.real,
+        inner2.real,
+        rtol=1e-5,
+        atol=1e-8,
+        err_msg="Real parts of the inner products do not match!",
     )
     np.testing.assert_allclose(
-        inner1.imag, inner2.imag,
-        rtol=1e-5, atol=1e-8,
-        err_msg="Imaginary parts of the inner products do not match!"
+        inner1.imag,
+        inner2.imag,
+        rtol=1e-5,
+        atol=1e-8,
+        err_msg="Imaginary parts of the inner products do not match!",
     )
+
+
+def test_stack_As_adjoint():
+    """stack_As adjoint consistency with 1D and 2D inputs."""
+    rng = np.random.default_rng(42)
+    m1, m2, n = 20, 30, 10
+
+    # Two dense operators
+    M1 = rng.standard_normal((m1, n))
+    M2 = rng.standard_normal((m2, n))
+    A1 = sla.aslinearoperator(M1)
+    A2 = sla.aslinearoperator(M2)
+    Astack = ms.mapmaking.stack_As(A1, A2)
+
+    # Reference: dense stacked matrix
+    Mstack = np.vstack([M1, M2])
+
+    x = rng.standard_normal(n)
+    y = rng.standard_normal(m1 + m2)
+
+    # Forward
+    np.testing.assert_allclose(Astack.matvec(x), Mstack @ x)
+
+    # Adjoint
+    np.testing.assert_allclose(Astack.rmatvec(y), Mstack.T @ y)
+
+    # Adjoint consistency: <Ax, y> == <x, A^H y>
+    Ax = Astack.matvec(x)
+    Ahy = Astack.rmatvec(y)
+    np.testing.assert_allclose(
+        np.dot(Ax, y),
+        np.dot(x, Ahy),
+        rtol=1e-10,
+    )
+
+
+def test_stack_As_2d_input():
+    """stack_As handles 2D column-vector inputs from svds."""
+    rng = np.random.default_rng(42)
+    m1, m2, n = 20, 30, 10
+    M1 = rng.standard_normal((m1, n))
+    M2 = rng.standard_normal((m2, n))
+    A1 = sla.aslinearoperator(M1)
+    A2 = sla.aslinearoperator(M2)
+    Astack = ms.mapmaking.stack_As(A1, A2)
+    Mstack = np.vstack([M1, M2])
+
+    # 2D column vector — this is what scipy passes internally
+    x_2d = rng.standard_normal((n, 1))
+    y_2d = rng.standard_normal((m1 + m2, 1))
+
+    # Should not raise, and values must match dense reference
+    fwd = np.asarray(Astack.matvec(x_2d)).ravel()
+    adj = np.asarray(Astack.rmatvec(y_2d)).ravel()
+    np.testing.assert_allclose(fwd, (Mstack @ x_2d).ravel())
+    np.testing.assert_allclose(adj, (Mstack.T @ y_2d).ravel())
+
+
+def test_stack_As_n_operators():
+    """stack_As works with more than two operators."""
+    rng = np.random.default_rng(42)
+    ms_ = [10, 15, 20]
+    n = 8
+    matrices = [rng.standard_normal((m, n)) for m in ms_]
+    ops = [sla.aslinearoperator(M) for M in matrices]
+    Astack = ms.mapmaking.stack_As(*ops)
+
+    Mstack = np.vstack(matrices)
+    x = rng.standard_normal(n)
+    y = rng.standard_normal(sum(ms_))
+
+    np.testing.assert_allclose(Astack.matvec(x), Mstack @ x)
+    np.testing.assert_allclose(Astack.rmatvec(y), Mstack.T @ y)
+
+
+def test_Atilde_with_stacked_A():
+    """Atilde works with a stacked A-matrix through svds."""
+    rng = np.random.default_rng(42)
+    m1, m2, n = 30, 40, 10
+    M1 = rng.standard_normal((m1, n))
+    M2 = rng.standard_normal((m2, n))
+    A1 = sla.aslinearoperator(M1)
+    A2 = sla.aslinearoperator(M2)
+    Astack = ms.mapmaking.stack_As(A1, A2)
+
+    Ndiag = np.abs(rng.standard_normal(m1 + m2)) + 0.1
+    Sdiag = np.abs(rng.standard_normal(n)) + 0.1
+    Atilde = ms.mapmaking.make_Atilde(Ndiag, Astack, Sdiag)
+
+    # This is the operation that failed before the fix:
+    # svds calls _rmatmat internally which passes 2D vectors.
+    U, Sigma, Vh = sla.svds(Atilde, k=5)
+    assert Sigma.shape == (5,)
+    assert U.shape == (m1 + m2, 5)
+    assert Vh.shape == (5, n)
