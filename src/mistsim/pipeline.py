@@ -13,8 +13,10 @@ import yaml
 from astropy.time import Time
 from nbconvert.preprocessors import ExecutePreprocessor
 
-import mistsim as ms
-from mistsim import mapmaking
+from . import mapmaking
+from .beam import Beam
+from .sim import Simulator
+from .sky import Sky
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +173,7 @@ def setup_sky(config):
     sim_freq = freqs[freq_ix]
     sky_map = haslam[freq_ix]
 
-    sky = ms.Sky(
+    sky = Sky(
         sky_map[None],
         sim_freq,
         sampling="healpix",
@@ -210,7 +212,7 @@ def build_beam(site_cfg, sim_freq, freqs, freq_ix):
         theta = np.linspace(0, np.pi, L + 1)
         g = np.sin(theta) ** 2
         g = np.repeat(g[:, None], 2 * L, axis=-1)
-        return ms.Beam(
+        return Beam(
             g[None],
             sim_freq,
             sampling="mwss",
@@ -229,7 +231,7 @@ def build_beam(site_cfg, sim_freq, freqs, freq_ix):
 
     az_rot = site_cfg.get("beam_az_rot", 0.0)
     tilt = site_cfg.get("beam_tilt", 0.0)
-    return ms.Beam(
+    return Beam(
         g[None],
         sim_freq,
         sampling="mwss",
@@ -261,7 +263,7 @@ def build_stacked_A(config, sky, times_jd, sim_freq):
     A_list = []
     for site in config["sites"]:
         beam = build_beam(site, sim_freq, freqs_arr, freq_ix)
-        sim = ms.Simulator(
+        sim = Simulator(
             beam,
             sky,
             times_jd,
