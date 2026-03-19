@@ -6,6 +6,8 @@ from pathlib import Path
 import astropy.units as u
 import croissant as cro
 import healpy as hp
+import jax
+import jax.numpy as jnp
 import nbformat
 import numpy as np
 import scipy.sparse.linalg as sla
@@ -281,6 +283,44 @@ def build_stacked_A(config, sky, times_jd, sim_freq):
     return mapmaking.stack_As(*A_list)
 
 
+def build_stacked_A_jax(config, sky, times_jd, sim_freq):
+    """Build and stack pure JAX operators for all sites.
+
+    Returns
+    -------
+    dict
+        Stacked JAX operator dict.
+
+    """
+    obs_cfg = config["observation"]
+    lmax = obs_cfg["lmax"]
+    freq_ix = config["sky"].get("freq_index", 0)
+    freqs_arr = np.arange(*config["sky"]["freq_range"])
+
+    op_list = []
+    for site in config["sites"]:
+        beam = build_beam(site, sim_freq, freqs_arr, freq_ix)
+        sim = Simulator(
+            beam,
+            sky,
+            times_jd,
+            sim_freq,
+            site["lon"],
+            site["lat"],
+            alt=site.get("alt", 0),
+            lmax=lmax,
+        )
+        logger.info(
+            "Building JAX operator for %s",
+            site["name"],
+        )
+        op_list.append(mapmaking.make_operators_jax(sim))
+
+    if len(op_list) == 1:
+        return op_list[0]
+    return mapmaking.stack_operators_jax(*op_list)
+
+
 # ------------------------------------------------------------------
 # Noise
 # ------------------------------------------------------------------
@@ -393,6 +433,63 @@ def wiener_filter(
     return x_rec_hp, D
 
 
+def wiener_filter_cg(
+    atilde_fwd,
+    atilde_adj,
+    Ndiag,
+    Sdiag,
+    y,
+    noise,
+    tol=1e-10,
+    maxiter=2000,
+):
+    """Wiener filter via conjugate gradient.
+
+    Solves ``(Atilde^H Atilde + I) x_tilde = Atilde^H y_tilde``
+    using :func:`jax.scipy.sparse.linalg.cg`.
+
+    Parameters
+    ----------
+    atilde_fwd, atilde_adj : callable
+        Whitened forward/adjoint operators.
+    Ndiag : array-like
+        Noise variance diagonal.
+    Sdiag : array-like
+        Prior covariance diagonal.
+    y : array-like
+        Data vector.
+    noise : array-like
+        Noise realization.
+    tol : float
+        CG tolerance.
+    maxiter : int
+        Maximum CG iterations.
+
+    Returns
+    -------
+    x_rec_hp : jax.Array
+        Recovered alm in healpy ordering.
+    info : int
+        CG convergence info (0 = success).
+
+    """
+    Nm12 = 1.0 / jnp.sqrt(jnp.asarray(Ndiag))
+    S12 = jnp.sqrt(jnp.asarray(Sdiag))
+
+    y_tilde = Nm12 * (jnp.asarray(y) + jnp.asarray(noise))
+    rhs = atilde_adj(y_tilde)
+
+    def normal_op(x):
+        return atilde_adj(atilde_fwd(x)) + x
+
+    x_tilde, info = jax.scipy.sparse.linalg.cg(
+        normal_op, rhs, tol=tol, maxiter=maxiter
+    )
+    x_rec = S12 * x_tilde
+    x_rec_hp = mapmaking.alm1d_to_hp(x_rec)
+    return jnp.asarray(x_rec_hp), info
+
+
 # ------------------------------------------------------------------
 # Posterior uncertainty
 # ------------------------------------------------------------------
@@ -465,8 +562,10 @@ def posterior_uncertainty(
 
 
 def run_pipeline(config):
-    """
-    Run the full mapmaking pipeline from a config dict.
+    """Run the full mapmaking pipeline from a config dict.
+
+    Set ``config["solver"]`` to ``"cg"`` (default) for the
+    JAX CG path or ``"svd"`` for the original ARPACK SVD path.
 
     Returns
     -------
@@ -487,49 +586,99 @@ def run_pipeline(config):
         N_times=obs["n_times"],
     )
     lmax = obs["lmax"]
+    solver = config.get("solver", "cg")
+    svd_cfg = config.get("svd", {})
+    post_cfg = config.get("posterior", {})
+    noise_seed = post_cfg.get("seed", 1420)
 
-    # Build stacked A
-    logger.info("Building A-matrices")
-    A = build_stacked_A(config, sky, times.jd, sim_freq)
-
-    # Forward model
-    logger.info("Running forward model")
-    y = A @ x_packed
+    # Build operators and forward model
+    if solver == "cg":
+        logger.info("Building JAX operators")
+        ops = build_stacked_A_jax(config, sky, times.jd, sim_freq)
+        logger.info("Running forward model")
+        y = np.asarray(ops["forward_fn"](jnp.asarray(x_packed)))
+    else:
+        logger.info("Building A-matrices")
+        A = build_stacked_A(config, sky, times.jd, sim_freq)
+        logger.info("Running forward model")
+        y = A @ x_packed
 
     # Noise
     df = (freqs[1] - freqs[0]) * 1e6  # Hz
     dt = (times[1] - times[0]).to_value(u.s)
-    post_cfg = config.get("posterior", {})
-    noise_seed = post_cfg.get("seed", 1420)
     Ndiag, noise = compute_noise(y, df, dt, seed=noise_seed)
 
     # Prior
     Sdiag = compute_prior(x_packed, lmax)
 
-    # Whitened operator + SVD
-    logger.info("Building Atilde and running SVD")
-    Atilde = mapmaking.make_Atilde(Ndiag, A, Sdiag)
-    svd_cfg = config.get("svd", {})
-    k = svd_cfg.get("n_singular_values", 1200)
-    U, Sigma, Vh = run_svd(Atilde, k=k)
+    # Solve
+    if solver == "cg":
+        atilde_fwd, atilde_adj = mapmaking.make_atilde_fns(
+            Ndiag,
+            ops["forward_fn"],
+            ops["adjoint_fn"],
+            Sdiag,
+        )
+
+        logger.info("Solving Wiener filter via CG")
+        cg_cfg = config.get("cg", {})
+        x_rec_hp, cg_info = wiener_filter_cg(
+            atilde_fwd,
+            atilde_adj,
+            Ndiag,
+            Sdiag,
+            y,
+            noise,
+            tol=cg_cfg.get("tol", 1e-10),
+            maxiter=cg_cfg.get("maxiter", 2000),
+        )
+        x_rec_hp = np.asarray(x_rec_hp)
+        logger.info("CG info=%d", cg_info)
+
+        logger.info("Randomized SVD for posterior")
+        k = svd_cfg.get("n_singular_values", 800)
+        U, Sigma, Vh = mapmaking.randomized_svd_jax(
+            atilde_fwd,
+            atilde_adj,
+            ops["shape"][1],
+            ops["shape"][0],
+            k,
+            p=svd_cfg.get("oversampling", 10),
+        )
+        Sigma = np.asarray(Sigma)
+        Vh = np.asarray(Vh)
+    else:
+        logger.info("Building Atilde and running SVD")
+        Atilde = mapmaking.make_Atilde(Ndiag, A, Sdiag)
+        k = svd_cfg.get("n_singular_values", 1200)
+        U, Sigma, Vh = run_svd(Atilde, k=k)
 
     # Select modes
     threshold = svd_cfg.get("threshold", 1e-10)
     nvec = select_nvec(Sigma, threshold=threshold)
-    logger.info("Selected nvec = %d (threshold = %e)", nvec, threshold)
-
-    # Wiener filter
-    logger.info("Applying Wiener filter")
-    x_rec_hp, D = wiener_filter(
-        U,
-        Sigma,
-        Vh,
+    logger.info(
+        "Selected nvec = %d (threshold = %e)",
         nvec,
-        Ndiag,
-        Sdiag,
-        y,
-        noise,
+        threshold,
     )
+
+    # SVD Wiener filter (SVD path only)
+    if solver != "cg":
+        logger.info("Applying Wiener filter")
+        x_rec_hp, _ = wiener_filter(
+            U,
+            Sigma,
+            Vh,
+            nvec,
+            Ndiag,
+            Sdiag,
+            y,
+            noise,
+        )
+
+    # Filter factors for diagnostics
+    Dnum = Sigma[:nvec]
+    D = Dnum / (1 + Dnum**2)
 
     # Posterior uncertainty
     logger.info("Computing posterior uncertainty")
