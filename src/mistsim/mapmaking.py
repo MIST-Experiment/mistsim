@@ -332,3 +332,198 @@ def make_Atilde(Ndiag, Amat, Sdiag):
         dtype=Amat.dtype,
     )
     return Atilde
+
+
+# ------------------------------------------------------------------
+# Pure JAX operators (no scipy / numpy conversion)
+# ------------------------------------------------------------------
+
+
+def make_operators_jax(sim):
+    """Build pure JAX forward/adjoint operators.
+
+    Unlike :func:`make_Amat` (which wraps JAX inside a scipy
+    ``LinearOperator``), this returns JAX callables that avoid
+    JAX-to-NumPy conversion overhead.
+
+    Parameters
+    ----------
+    sim : Simulator
+        Simulation parameters.
+
+    Returns
+    -------
+    dict
+        ``forward_fn`` : ``(nfreqs*nalm,) -> (nfreqs*ntimes,)``
+        ``adjoint_fn`` : ``(nfreqs*ntimes,) -> (nfreqs*nalm,)``
+        ``shape`` : ``(nfreqs*ntimes, nfreqs*nalm)``
+        ``beam_alm``, ``phases`` : arrays used internally.
+
+    """
+    beam_alm = sim.compute_beam_eq()
+    beam_alm = cro.utils.reduce_lmax(beam_alm, sim.lmax)
+    phases = sim.phases
+
+    nalm = (sim.lmax + 1) ** 2
+    nfreqs = sim.freqs.size
+    ntimes = sim.times_jd.size
+    shape = (nfreqs * ntimes, nfreqs * nalm)
+
+    def _fwd(x):
+        y = _forward_jax(x, beam_alm, phases)
+        return y.ravel().real
+
+    xdummy = jnp.zeros(nfreqs * nalm, dtype=jnp.float64)
+    _transpose = jax.linear_transpose(_fwd, xdummy)
+
+    def _adj(y):
+        return _transpose(y)[0]
+
+    return {
+        "forward_fn": jax.jit(_fwd),
+        "adjoint_fn": jax.jit(_adj),
+        "shape": shape,
+        "beam_alm": beam_alm,
+        "phases": phases,
+    }
+
+
+def stack_operators_jax(*op_list):
+    """Vertically stack pure JAX operators.
+
+    Parameters
+    ----------
+    *op_list : dict
+        Operator dicts from :func:`make_operators_jax`.
+
+    Returns
+    -------
+    dict
+        Stacked operator with combined forward/adjoint.
+
+    """
+    if len(op_list) < 2:
+        raise ValueError("Need at least two operators to stack")
+    n = op_list[0]["shape"][1]
+    for op in op_list[1:]:
+        if op["shape"][1] != n:
+            raise ValueError("Incompatible shapes")
+    m_total = sum(op["shape"][0] for op in op_list)
+    m_sizes = tuple(op["shape"][0] for op in op_list)
+    fwd_fns = [op["forward_fn"] for op in op_list]
+    adj_fns = [op["adjoint_fn"] for op in op_list]
+
+    @jax.jit
+    def forward_fn(x):
+        return jnp.concatenate([f(x) for f in fwd_fns])
+
+    @jax.jit
+    def adjoint_fn(y):
+        result = jnp.zeros(n, dtype=jnp.float64)
+        offset = 0
+        for adj, m in zip(adj_fns, m_sizes):
+            result = result + adj(y[offset : offset + m])
+            offset += m
+        return result
+
+    return {
+        "forward_fn": forward_fn,
+        "adjoint_fn": adjoint_fn,
+        "shape": (m_total, n),
+    }
+
+
+def make_atilde_fns(Ndiag, fwd_fn, adj_fn, Sdiag):
+    """Build whitened forward/adjoint as JAX callables.
+
+    Returns ``(atilde_fwd, atilde_adj)`` where::
+
+        atilde_fwd(x) = N^{-1/2} * fwd(S^{1/2} * x)
+        atilde_adj(y) = S^{1/2} * adj(N^{-1/2} * y)
+
+    Parameters
+    ----------
+    Ndiag : array-like
+        Noise variance diagonal, shape ``(ndata,)``.
+    fwd_fn : callable
+        Forward operator ``(nalm,) -> (ndata,)``.
+    adj_fn : callable
+        Adjoint operator ``(ndata,) -> (nalm,)``.
+    Sdiag : array-like
+        Prior covariance diagonal, shape ``(nalm,)``.
+
+    Returns
+    -------
+    atilde_fwd, atilde_adj : callable
+
+    """
+    Nm12 = 1.0 / jnp.sqrt(jnp.asarray(Ndiag))
+    S12 = jnp.sqrt(jnp.asarray(Sdiag))
+
+    @jax.jit
+    def atilde_fwd(x):
+        return Nm12 * fwd_fn(S12 * x)
+
+    @jax.jit
+    def atilde_adj(y):
+        return S12 * adj_fn(Nm12 * y)
+
+    return atilde_fwd, atilde_adj
+
+
+def randomized_svd_jax(
+    atilde_fwd,
+    atilde_adj,
+    nalm,
+    ndata,
+    k,
+    p=10,
+    seed=0,
+):
+    """Randomized SVD via Halko-Martinsson-Tropp.
+
+    Computes an approximate rank-*k* SVD using only forward
+    and adjoint evaluations.  All computation stays in JAX.
+
+    Parameters
+    ----------
+    atilde_fwd : callable
+        Forward ``(nalm,) -> (ndata,)``.
+    atilde_adj : callable
+        Adjoint ``(ndata,) -> (nalm,)``.
+    nalm, ndata : int
+        Operator dimensions.
+    k : int
+        Target rank.
+    p : int
+        Oversampling parameter.
+    seed : int
+        PRNG seed.
+
+    Returns
+    -------
+    U : jax.Array, ``(ndata, k)``
+    Sigma : jax.Array, ``(k,)``
+    Vh : jax.Array, ``(k, nalm)``
+
+    """
+    key = jax.random.PRNGKey(seed)
+    Omega = jax.random.normal(key, (k + p, nalm))
+
+    # Y = Atilde @ Omega^T: apply forward to each row
+    Y_cols = [atilde_fwd(Omega[i]) for i in range(k + p)]
+    Y = jnp.stack(Y_cols, axis=1)  # (ndata, k+p)
+
+    Q, _ = jnp.linalg.qr(Y)
+
+    # B = Atilde^H @ Q: apply adjoint to each column
+    B_cols = [atilde_adj(Q[:, i]) for i in range(k + p)]
+    B = jnp.stack(B_cols, axis=1)  # (nalm, k+p)
+
+    # SVD of B^T: (k+p, nalm)
+    U_B, Sigma_full, Vh_B = jnp.linalg.svd(B.T, full_matrices=False)
+
+    U = Q @ U_B[:, :k]
+    Sigma = Sigma_full[:k]
+    Vh = Vh_B[:k]
+    return U, Sigma, Vh

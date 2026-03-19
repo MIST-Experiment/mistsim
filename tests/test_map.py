@@ -8,6 +8,7 @@ from astropy import units as u
 from astropy.time import Time
 
 import mistsim as ms
+from mistsim import pipeline
 
 
 @pytest.fixture
@@ -250,3 +251,124 @@ def test_Atilde_with_stacked_A():
     assert Sigma.shape == (5,)
     assert U.shape == (m1 + m2, 5)
     assert Vh.shape == (5, n)
+
+
+# ------------------------------------------------------------------
+# Pure JAX operator tests
+# ------------------------------------------------------------------
+
+
+def test_jax_operators(sim):
+    """Pure JAX operators match scipy LinearOperator."""
+    Amat = ms.mapmaking.make_Amat(sim)
+    ops = ms.mapmaking.make_operators_jax(sim)
+
+    rng = np.random.default_rng(42)
+    x = rng.standard_normal(Amat.shape[1])
+    y = rng.standard_normal(Amat.shape[0])
+
+    # Forward
+    fwd_scipy = Amat.matvec(x)
+    fwd_jax = np.asarray(ops["forward_fn"](jnp.asarray(x)))
+    np.testing.assert_allclose(fwd_jax, fwd_scipy.real, rtol=1e-10)
+
+    # Adjoint
+    adj_scipy = Amat.rmatvec(y)
+    adj_jax = np.asarray(ops["adjoint_fn"](jnp.asarray(y)))
+    np.testing.assert_allclose(adj_jax, adj_scipy.real, rtol=1e-10)
+
+
+def test_jax_adjoint_consistency(sim):
+    """JAX forward/adjoint satisfy <Ax, y> = <x, A^H y>."""
+    ops = ms.mapmaking.make_operators_jax(sim)
+
+    rng = np.random.default_rng(42)
+    x = jnp.asarray(rng.standard_normal(ops["shape"][1]))
+    y = jnp.asarray(rng.standard_normal(ops["shape"][0]))
+
+    Ax = ops["forward_fn"](x)
+    Aty = ops["adjoint_fn"](y)
+
+    inner1 = jnp.dot(Ax, y)
+    inner2 = jnp.dot(x, Aty)
+    np.testing.assert_allclose(float(inner1), float(inner2), rtol=1e-5)
+
+
+def test_cg_wiener_vs_dense():
+    """CG Wiener filter matches direct dense solve."""
+    rng = np.random.default_rng(42)
+    lmax = 4
+    nalm = (lmax + 1) ** 2  # 25
+    ndata = 50
+
+    M = rng.standard_normal((ndata, nalm))
+    Ndiag = np.abs(rng.standard_normal(ndata)) + 0.1
+    Sdiag = np.abs(rng.standard_normal(nalm)) + 0.1
+
+    y = rng.standard_normal(ndata)
+    noise = rng.standard_normal(ndata) * 0.01
+
+    # Dense reference solve
+    Nm12 = 1.0 / np.sqrt(Ndiag)
+    S12 = np.sqrt(Sdiag)
+    Atilde_dense = np.diag(Nm12) @ M @ np.diag(S12)
+    y_tilde = Nm12 * (y + noise)
+    AtA = Atilde_dense.T @ Atilde_dense + np.eye(nalm)
+    rhs = Atilde_dense.T @ y_tilde
+    x_tilde_dense = np.linalg.solve(AtA, rhs)
+    x_dense = S12 * x_tilde_dense
+    x_dense_hp = np.asarray(ms.mapmaking.alm1d_to_hp(x_dense))
+
+    # CG solve
+    Mjax = jnp.asarray(M)
+
+    def fwd(x):
+        return Mjax @ x
+
+    def adj(yv):
+        return Mjax.T @ yv
+
+    atilde_fwd, atilde_adj = ms.mapmaking.make_atilde_fns(
+        Ndiag, fwd, adj, Sdiag
+    )
+    x_cg_hp, info = pipeline.wiener_filter_cg(
+        atilde_fwd,
+        atilde_adj,
+        Ndiag,
+        Sdiag,
+        y,
+        noise,
+        tol=1e-12,
+        maxiter=1000,
+    )
+
+    # JAX CG may return info=None; check solution directly
+    np.testing.assert_allclose(np.asarray(x_cg_hp), x_dense_hp, rtol=1e-5)
+
+
+def test_randomized_svd():
+    """Randomized SVD singular values match numpy svd."""
+    rng = np.random.default_rng(42)
+    m, n = 200, 60
+    k = 15
+
+    # Matrix with rapidly decaying singular values
+    # so top-k are well-captured by randomized SVD
+    U0, _ = np.linalg.qr(rng.standard_normal((m, m)))
+    V0, _ = np.linalg.qr(rng.standard_normal((n, n)))
+    true_sigma = np.exp(-np.arange(n) * 0.2)
+    M = U0[:, :n] @ np.diag(true_sigma) @ V0.T
+    Mjax = jnp.asarray(M)
+
+    def fwd(x):
+        return Mjax @ x
+
+    def adj(y):
+        return Mjax.T @ y
+
+    _, Sigma_rsvd, _ = ms.mapmaking.randomized_svd_jax(
+        fwd, adj, n, m, k, p=20, seed=42
+    )
+
+    Sigma_ref = true_sigma[:k]
+    np.testing.assert_allclose(np.asarray(Sigma_rsvd), Sigma_ref, rtol=1e-3)
