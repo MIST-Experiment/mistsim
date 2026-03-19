@@ -425,7 +425,7 @@ def test_forward_single_freq(sim):
     beam_alm = cro.utils.reduce_lmax(beam_alm, lmax)
     phases = sim.phases
 
-    # Full multi-freq forward (nfreq=1 here)
+    # Full multi-frequency forward over all frequencies
     nfreq = beam_alm.shape[0]
     x_per_freq = x_real.reshape(nfreq, -1)
     y_ref = ms.mapmaking._forward_jax(x_real, beam_alm, phases)
