@@ -1,44 +1,4 @@
-sky:
-  haslam_file: "../../data/haslam_galactic.npz"
-  spectral_index: -2.55
-  freq_range: [25, 126]
-  freq_index: 0
-
-observation:
-  start_time: "2026-02-25 12:27"
-  n_sidereal_days: 1.0
-  n_times: 500
-  lmax: 179
-
-sites:
-  - name: "mars-csa2022-dip"
-    beam_file: "../../data/20240806_for_lisa/csa2022_beam2.npz"
-    lat: 79.41833
-    lon: -90.74750
-    alt: 150
-    beam_az_rot: 80
-
-  - name: "alma-csa2022-dip"
-    beam_file: "../../data/20240806_for_lisa/csa2022_beam2.npz"
-    lat: -23.02917
-    lon: -67.75500
-    alt: 5050
-
-  - name: "nv-dip"
-    beam_file: "../../data/20240806_for_lisa/jackpot_beam2.npz"
-    lat: 37.21333
-    lon: -117.09111
-    alt: 0
-    beam_az_rot: 26
+beams: [mars-csa2022-dip, alma-csa2022-dip, nv-dip]
 
 svd:
   n_singular_values: 1200
-  threshold: 1.0e-10
-
-posterior:
-  n_realizations: 1000
-  seed: 1420
-
-output:
-  results_dir: "../results"
-  generate_notebook: true

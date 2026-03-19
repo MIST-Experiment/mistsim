@@ -27,17 +27,70 @@ logger = logging.getLogger(__name__)
 def load_config(path):
     """Load and return a YAML config dict.
 
-    Relative paths in the config (``haslam_file``, ``beam_file``,
-    ``results_dir``) are resolved against the config file's parent
-    directory so that the pipeline works regardless of the caller's
-    working directory.
+    The config lists beam names defined in ``beams.yaml`` (must live
+    in the same directory)::
+
+        beams: [mars-csa2022-dip, nv-dip]
+        svd:
+          n_singular_values: 800
+
+    Defaults for sky, observation, posterior, and output come from
+    ``beams.yaml`` and can be overridden per-run.  Relative paths
+    are resolved against the config file's parent directory.
     """
     path = Path(path)
     config_dir = path.resolve().parent
     with open(path) as f:
         cfg = yaml.safe_load(f)
+
+    cfg = _expand_beam_config(cfg, config_dir)
     _resolve_config_paths(cfg, config_dir)
     return cfg
+
+
+def _expand_beam_config(cfg, config_dir):
+    """Expand compact beam-list config into full sites format."""
+    registry_path = config_dir / "beams.yaml"
+    with open(registry_path) as f:
+        registry = yaml.safe_load(f)
+
+    sites_defs = registry["sites"]
+    beams_defs = registry["beams"]
+    defaults = registry.get("defaults", {})
+
+    # Start from defaults, then overlay run-specific settings
+    merged = {}
+    for key, val in defaults.items():
+        merged[key] = dict(val)
+    for key, val in cfg.items():
+        if key == "beams":
+            continue
+        if isinstance(val, dict) and key in merged:
+            merged[key].update(val)
+        else:
+            merged[key] = val
+
+    # Build sites list from beam names
+    beam_names = cfg["beams"]
+    sites_list = []
+    for beam_name in beam_names:
+        if beam_name not in beams_defs:
+            raise ValueError(
+                f"Unknown beam {beam_name!r}. Available: {list(beams_defs)}"
+            )
+        beam_def = dict(beams_defs[beam_name])
+        site_key = beam_def.pop("site")
+        if site_key not in sites_defs:
+            raise ValueError(
+                f"Unknown site {site_key!r} for beam {beam_name!r}"
+            )
+        site_def = dict(sites_defs[site_key])
+        # Merge: site coords + beam-specific settings
+        entry = {"name": beam_name, **site_def, **beam_def}
+        sites_list.append(entry)
+
+    merged["sites"] = sites_list
+    return merged
 
 
 def _resolve_config_paths(cfg, config_dir):
