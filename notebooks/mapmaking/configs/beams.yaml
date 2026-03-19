@@ -70,4 +70,5 @@ defaults:
 
   output:
     results_dir: "../results"
+    notebooks_dir: "../notebooks_out"
     generate_notebook: true

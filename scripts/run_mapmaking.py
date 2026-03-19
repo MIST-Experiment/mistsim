@@ -73,21 +73,23 @@ def main():
         logger.info("Overriding nvec: %d -> %d", results["nvec"], args.nvec)
         results["nvec"] = args.nvec
 
-    # Output directory (paths resolved by load_config)
+    # Output directories (paths resolved by load_config)
     out_cfg = config.get("output", {})
-    output_dir = Path(
+    results_dir = Path(
         args.output_dir or out_cfg.get("results_dir", "results")
     ).resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
+    results_dir.mkdir(parents=True, exist_ok=True)
 
     run_name = run_name_from_config(config)
-    npz_path = output_dir / f"{run_name}.npz"
+    npz_path = results_dir / f"{run_name}.npz"
     save_results(results, npz_path)
 
     # Notebook
     gen_nb = out_cfg.get("generate_notebook", True)
     if not args.no_notebook and gen_nb:
-        nb_path = output_dir / f"{run_name}.ipynb"
+        nb_dir = Path(out_cfg.get("notebooks_dir", "notebooks_out")).resolve()
+        nb_dir.mkdir(parents=True, exist_ok=True)
+        nb_path = nb_dir / f"{run_name}.ipynb"
         generate_notebook(results, npz_path, nb_path)
 
     logger.info("Done: %s", run_name)

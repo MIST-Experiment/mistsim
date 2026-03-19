@@ -109,12 +109,13 @@ def _resolve_config_paths(cfg, config_dir):
             if not p.is_absolute():
                 site["beam_file"] = str(config_dir / p)
 
-    # output.results_dir
+    # output directories
     out = cfg.get("output", {})
-    if "results_dir" in out:
-        p = Path(out["results_dir"])
-        if not p.is_absolute():
-            out["results_dir"] = str(config_dir / p)
+    for key in ("results_dir", "notebooks_dir"):
+        if key in out:
+            p = Path(out[key])
+            if not p.is_absolute():
+                out[key] = str(config_dir / p)
 
 
 def run_name_from_config(config):
