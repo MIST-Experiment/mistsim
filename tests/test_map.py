@@ -372,3 +372,78 @@ def test_randomized_svd():
 
     Sigma_ref = true_sigma[:k]
     np.testing.assert_allclose(np.asarray(Sigma_rsvd), Sigma_ref, rtol=1e-3)
+
+
+# ------------------------------------------------------------------
+# Multi-frequency helpers
+# ------------------------------------------------------------------
+
+
+def test_resolve_freq_indices_single():
+    """freq_index (singular) → single-element list."""
+    cfg = {"sky": {"freq_index": 3, "freq_range": [25, 126]}}
+    ix = pipeline._resolve_freq_indices(cfg)
+    assert ix == [3]
+
+
+def test_resolve_freq_indices_multi():
+    """freq_indices (plural) → list."""
+    cfg = {"sky": {"freq_indices": [0, 5, 10], "freq_range": [25, 126]}}
+    ix = pipeline._resolve_freq_indices(cfg)
+    assert ix == [0, 5, 10]
+
+
+def test_resolve_freq_indices_all():
+    """freq_indices: "all" → all frequencies."""
+    cfg = {"sky": {"freq_indices": "all", "freq_range": [25, 30]}}
+    ix = pipeline._resolve_freq_indices(cfg)
+    assert ix == [0, 1, 2, 3, 4]
+
+
+def test_resolve_freq_indices_default():
+    """Neither key → all frequencies."""
+    cfg = {"sky": {"freq_range": [25, 30]}}
+    ix = pipeline._resolve_freq_indices(cfg)
+    assert ix == [0, 1, 2, 3, 4]
+
+
+def test_pad_and_stack():
+    """Pad arrays of different lengths."""
+    arrays = [np.array([1, 2, 3]), np.array([4, 5])]
+    result = pipeline._pad_and_stack(arrays)
+    expected = np.array([[1, 2, 3], [4, 5, 0]])
+    np.testing.assert_array_equal(result, expected)
+
+
+def test_forward_single_freq(sim):
+    """_forward_single_freq matches _forward_jax for 1-freq."""
+    sky_alm = sim.sky.compute_alm_eq(world="earth")
+    lmax = cro.utils.lmax_from_shape(sky_alm.shape)
+    x_real = ms.mapmaking.pack_s2fft_to_real(sky_alm)
+
+    beam_alm = sim.compute_beam_eq()
+    beam_alm = cro.utils.reduce_lmax(beam_alm, lmax)
+    phases = sim.phases
+
+    # Full multi-freq forward (nfreq=1 here)
+    nfreq = beam_alm.shape[0]
+    x_per_freq = x_real.reshape(nfreq, -1)
+    y_ref = ms.mapmaking._forward_jax(x_real, beam_alm, phases)
+
+    # Per-frequency forward
+    y_parts = []
+    for f in range(nfreq):
+        y_f = ms.mapmaking._forward_single_freq(
+            x_per_freq[f], beam_alm[f], phases
+        )
+        y_parts.append(y_f)
+    # Stack as (ntimes, nfreq) to match _forward_jax layout
+    ntimes = sim.times_jd.size
+    y_test = jnp.stack(y_parts, axis=1)  # (ntimes, nfreq)
+    y_ref_2d = y_ref.reshape(ntimes, nfreq)
+
+    np.testing.assert_allclose(
+        np.asarray(y_test),
+        np.asarray(y_ref_2d.real),
+        rtol=1e-10,
+    )
