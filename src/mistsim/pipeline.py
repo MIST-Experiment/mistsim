@@ -183,7 +183,7 @@ def _scale_map(m, freqs, beta=-2.55, f0=408, tcmb=2.725):
     return (m - tcmb)[None, :] * scale[:, None] + tcmb
 
 
-def setup_sky(config, freq_ix=None):
+def setup_sky(config, freq_ix=None, haslam_scaled=None):
     """
     Load Haslam map, scale frequencies, build Sky object.
 
@@ -193,6 +193,11 @@ def setup_sky(config, freq_ix=None):
     freq_ix : int or None
         Frequency index override.  When *None*, reads from
         ``config["sky"]["freq_index"]``.
+    haslam_scaled : np.ndarray or None
+        Pre-loaded and pre-scaled Haslam map with shape
+        ``(n_freqs, n_pix)``.  When provided the map is not
+        reloaded from disk, which avoids redundant I/O when
+        calling this function inside a frequency loop.
 
     Returns
     -------
@@ -206,19 +211,22 @@ def setup_sky(config, freq_ix=None):
 
     """
     sky_cfg = config["sky"]
-    d = np.load(sky_cfg["haslam_file"])
-    haslam_onefreq = d["m"][-1]
-    f0_haslam = d["freqs"][-1]
-
     fr = sky_cfg["freq_range"]
     freqs = np.arange(fr[0], fr[1])
-    beta = sky_cfg.get("spectral_index", -2.55)
-    haslam = _scale_map(haslam_onefreq, freqs, beta=beta, f0=f0_haslam)
+
+    if haslam_scaled is None:
+        d = np.load(sky_cfg["haslam_file"])
+        haslam_onefreq = d["m"][-1]
+        f0_haslam = d["freqs"][-1]
+        beta = sky_cfg.get("spectral_index", -2.55)
+        haslam_scaled = _scale_map(
+            haslam_onefreq, freqs, beta=beta, f0=f0_haslam
+        )
 
     if freq_ix is None:
         freq_ix = sky_cfg.get("freq_index", 0)
     sim_freq = freqs[freq_ix]
-    sky_map = haslam[freq_ix]
+    sky_map = haslam_scaled[freq_ix]
 
     sky = Sky(
         sky_map[None],
@@ -617,11 +625,21 @@ def _prepare_freq_data(config, times, freqs):
     freq_indices = _resolve_freq_indices(config)
     obs_cfg = config["observation"]
     lmax = obs_cfg["lmax"]
-    freqs_arr = np.arange(*config["sky"]["freq_range"])
+    sky_cfg = config["sky"]
+    freqs_arr = np.arange(*sky_cfg["freq_range"])
     post_cfg = config.get("posterior", {})
     noise_seed = post_cfg.get("seed", 1420)
     df = (freqs[1] - freqs[0]) * 1e6
     dt = (times[1] - times[0]).to_value(u.s)
+
+    # Load and scale Haslam map once for all frequencies.
+    d = np.load(sky_cfg["haslam_file"])
+    haslam_onefreq = d["m"][-1]
+    f0_haslam = d["freqs"][-1]
+    beta = sky_cfg.get("spectral_index", -2.55)
+    haslam_scaled = _scale_map(
+        haslam_onefreq, freqs_arr, beta=beta, f0=f0_haslam
+    )
 
     beam_alms_list = []
     y_list, Ndiag_list, noise_list = [], [], []
@@ -630,7 +648,9 @@ def _prepare_freq_data(config, times, freqs):
     sim_freqs = []
 
     for i, fi in enumerate(freq_indices):
-        sky_f, xp_f, xhp_f, _, sf = setup_sky(config, freq_ix=fi)
+        sky_f, xp_f, xhp_f, _, sf = setup_sky(
+            config, freq_ix=fi, haslam_scaled=haslam_scaled
+        )
         x_packed_list.append(xp_f)
         x_hp_list.append(xhp_f)
         sim_freqs.append(sf)
