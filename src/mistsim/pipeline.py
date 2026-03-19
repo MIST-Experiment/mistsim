@@ -644,7 +644,7 @@ def _prepare_freq_data(config, times, freqs):
                 beam,
                 sky_f,
                 times.jd,
-                sf,
+                np.array([sf]),
                 site["lon"],
                 site["lat"],
                 alt=site.get("alt", 0),
