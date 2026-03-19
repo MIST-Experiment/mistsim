@@ -55,8 +55,6 @@ def load_config(path, run_name):
         raise ValueError(f"Unknown run {run_name!r}. Available: {available}")
 
     cfg = dict(runs[run_name])
-    # Use the run key as default run_name
-    cfg.setdefault("run_name", run_name)
 
     cfg = _expand_beam_config(cfg, registry)
     _resolve_config_paths(cfg, config_dir)
