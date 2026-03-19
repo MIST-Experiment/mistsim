@@ -28,36 +28,43 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------
 
 
-def load_config(path):
-    """Load and return a YAML config dict.
+def load_config(path, run_name):
+    """Load a run from a YAML config file.
 
-    The config lists beam names defined in ``beams.yaml`` (must live
-    in the same directory)::
+    Parameters
+    ----------
+    path : str or Path
+        Path to the ``runs.yaml`` file containing sites, beams,
+        defaults, and named runs.
+    run_name : str
+        Key under the ``runs:`` section to load.
 
-        beams: [mars-csa2022-dip, nv-dip]
-        svd:
-          n_singular_values: 800
-
-    Defaults for sky, observation, posterior, and output come from
-    ``beams.yaml`` and can be overridden per-run.  Relative paths
-    are resolved against the config file's parent directory.
+    Returns
+    -------
+    dict
+        Fully expanded config dict ready for :func:`run_pipeline`.
     """
     path = Path(path)
     config_dir = path.resolve().parent
     with open(path) as f:
-        cfg = yaml.safe_load(f)
+        registry = yaml.safe_load(f)
 
-    cfg = _expand_beam_config(cfg, config_dir)
+    runs = registry.get("runs", {})
+    if run_name not in runs:
+        available = list(runs)
+        raise ValueError(f"Unknown run {run_name!r}. Available: {available}")
+
+    cfg = dict(runs[run_name])
+    # Use the run key as default run_name
+    cfg.setdefault("run_name", run_name)
+
+    cfg = _expand_beam_config(cfg, registry)
     _resolve_config_paths(cfg, config_dir)
     return cfg
 
 
-def _expand_beam_config(cfg, config_dir):
+def _expand_beam_config(cfg, registry):
     """Expand compact beam-list config into full sites format."""
-    registry_path = config_dir / "beams.yaml"
-    with open(registry_path) as f:
-        registry = yaml.safe_load(f)
-
     sites_defs = registry["sites"]
     beams_defs = registry["beams"]
     defaults = registry.get("defaults", {})
@@ -122,6 +129,38 @@ def _resolve_config_paths(cfg, config_dir):
                 out[key] = str(config_dir / p)
 
 
+def _resolve_freq_indices(config):
+    """Return frequency indices to simulate.
+
+    - ``freq_indices`` in sky config → use that list
+    - Only ``freq_index`` (singular) → ``[freq_index]``
+    - Neither → all frequencies in ``freq_range``
+
+    Returns
+    -------
+    list[int]
+
+    """
+    sky_cfg = config["sky"]
+    if "freq_indices" in sky_cfg:
+        val = sky_cfg["freq_indices"]
+        if val == "all":
+            fr = sky_cfg["freq_range"]
+            return list(range(fr[1] - fr[0]))
+        return list(val)
+    if "freq_index" in sky_cfg:
+        return [sky_cfg["freq_index"]]
+    fr = sky_cfg["freq_range"]
+    return list(range(fr[1] - fr[0]))
+
+
+def _pad_and_stack(arrays):
+    """Pad 1-D arrays to equal length and stack."""
+    max_len = max(len(a) for a in arrays)
+    padded = [np.pad(a, (0, max_len - len(a))) for a in arrays]
+    return np.stack(padded)
+
+
 def run_name_from_config(config):
     """
     Derive a run name by joining site names with hyphens.
@@ -146,9 +185,16 @@ def _scale_map(m, freqs, beta=-2.55, f0=408, tcmb=2.725):
     return (m - tcmb)[None, :] * scale[:, None] + tcmb
 
 
-def setup_sky(config):
+def setup_sky(config, freq_ix=None):
     """
     Load Haslam map, scale frequencies, build Sky object.
+
+    Parameters
+    ----------
+    config : dict
+    freq_ix : int or None
+        Frequency index override.  When *None*, reads from
+        ``config["sky"]["freq_index"]``.
 
     Returns
     -------
@@ -171,7 +217,8 @@ def setup_sky(config):
     beta = sky_cfg.get("spectral_index", -2.55)
     haslam = _scale_map(haslam_onefreq, freqs, beta=beta, f0=f0_haslam)
 
-    freq_ix = sky_cfg.get("freq_index", 0)
+    if freq_ix is None:
+        freq_ix = sky_cfg.get("freq_index", 0)
     sim_freq = freqs[freq_ix]
     sky_map = haslam[freq_ix]
 
@@ -248,7 +295,7 @@ def build_beam(site_cfg, sim_freq, freqs, freq_ix):
 # ------------------------------------------------------------------
 
 
-def build_stacked_A(config, sky, times_jd, sim_freq):
+def build_stacked_A(config, sky, times_jd, sim_freq, freq_ix=None):
     """
     Build and stack A-matrices for all sites.
 
@@ -259,7 +306,8 @@ def build_stacked_A(config, sky, times_jd, sim_freq):
     """
     obs_cfg = config["observation"]
     lmax = obs_cfg["lmax"]
-    freq_ix = config["sky"].get("freq_index", 0)
+    if freq_ix is None:
+        freq_ix = config["sky"].get("freq_index", 0)
     freqs_arr = np.arange(*config["sky"]["freq_range"])
 
     A_list = []
@@ -283,7 +331,7 @@ def build_stacked_A(config, sky, times_jd, sim_freq):
     return mapmaking.stack_As(*A_list)
 
 
-def build_stacked_A_jax(config, sky, times_jd, sim_freq):
+def build_stacked_A_jax(config, sky, times_jd, sim_freq, freq_ix=None):
     """Build and stack pure JAX operators for all sites.
 
     Returns
@@ -294,7 +342,8 @@ def build_stacked_A_jax(config, sky, times_jd, sim_freq):
     """
     obs_cfg = config["observation"]
     lmax = obs_cfg["lmax"]
-    freq_ix = config["sky"].get("freq_index", 0)
+    if freq_ix is None:
+        freq_ix = config["sky"].get("freq_index", 0)
     freqs_arr = np.arange(*config["sky"]["freq_range"])
 
     op_list = []
@@ -557,26 +606,201 @@ def posterior_uncertainty(
 
 
 # ------------------------------------------------------------------
+# Multi-frequency data preparation
+# ------------------------------------------------------------------
+
+
+def _prepare_freq_data(config, times, freqs):
+    """Build per-frequency arrays for the ``lax.map`` solve.
+
+    Returns numpy/jax arrays stacked over frequencies,
+    plus per-site phases (shared across freqs).
+    """
+    freq_indices = _resolve_freq_indices(config)
+    obs_cfg = config["observation"]
+    lmax = obs_cfg["lmax"]
+    freqs_arr = np.arange(*config["sky"]["freq_range"])
+    post_cfg = config.get("posterior", {})
+    noise_seed = post_cfg.get("seed", 1420)
+    df = (freqs[1] - freqs[0]) * 1e6
+    dt = (times[1] - times[0]).to_value(u.s)
+
+    beam_alms_list = []
+    y_list, Ndiag_list, noise_list = [], [], []
+    Sdiag_list, x_packed_list, x_hp_list = [], [], []
+    phases_per_site = []
+    sim_freqs = []
+
+    for i, fi in enumerate(freq_indices):
+        sky_f, xp_f, xhp_f, _, sf = setup_sky(config, freq_ix=fi)
+        x_packed_list.append(xp_f)
+        x_hp_list.append(xhp_f)
+        sim_freqs.append(sf)
+
+        # Per-site beam + phases
+        beams_f = []
+        y_parts = []
+        for s, site in enumerate(config["sites"]):
+            beam = build_beam(site, sf, freqs_arr, fi)
+            sim = Simulator(
+                beam,
+                sky_f,
+                times.jd,
+                sf,
+                site["lon"],
+                site["lat"],
+                alt=site.get("alt", 0),
+                lmax=lmax,
+            )
+            ba = sim.compute_beam_eq()
+            ba = cro.utils.reduce_lmax(ba, lmax)
+            beams_f.append(ba[0])  # squeeze freq dim
+            if i == 0:
+                phases_per_site.append(sim.phases)
+            y_s = mapmaking._forward_single_freq(
+                jnp.asarray(xp_f),
+                ba[0],
+                phases_per_site[s],
+            )
+            y_parts.append(np.asarray(y_s))
+
+        beam_alms_list.append(jnp.stack(beams_f))
+        y_f = np.concatenate(y_parts)
+        y_list.append(y_f)
+        Nd_f, n_f = compute_noise(y_f, df, dt, seed=noise_seed + i)
+        Ndiag_list.append(Nd_f)
+        noise_list.append(n_f)
+        Sdiag_list.append(compute_prior(xp_f, lmax))
+
+        logger.info(
+            "Prepared freq %d/%d (%.0f MHz)",
+            i + 1,
+            len(freq_indices),
+            sf,
+        )
+
+    return {
+        "beam_alms": jnp.stack(beam_alms_list),
+        "phases": jnp.stack(phases_per_site),
+        "y": jnp.asarray(np.stack(y_list)),
+        "Ndiag": jnp.asarray(np.stack(Ndiag_list)),
+        "Sdiag": jnp.asarray(np.stack(Sdiag_list)),
+        "noise": jnp.asarray(np.stack(noise_list)),
+        "x_packed": np.stack(x_packed_list),
+        "x_hp": np.stack(x_hp_list),
+        "sim_freqs": np.array(sim_freqs),
+        "freq_indices": freq_indices,
+    }
+
+
+def _solve_all_freqs(fdata, config):
+    """CG + randomized SVD for all frequencies via lax.map.
+
+    Parameters
+    ----------
+    fdata : dict
+        Output of :func:`_prepare_freq_data`.
+    config : dict
+
+    Returns
+    -------
+    x_rec_hp : jax.Array, ``(nfreq, nalm_hp)``
+
+    """
+    phases = fdata["phases"]
+    nsites = phases.shape[0]
+    nalm = fdata["Sdiag"].shape[1]
+
+    cg_cfg = config.get("cg", {})
+    tol = cg_cfg.get("tol", 1e-10)
+    maxiter = cg_cfg.get("maxiter", 2000)
+
+    def _solve_one(args):
+        ba_f, y_f, Nd_f, Sd_f, n_f = args
+
+        def fwd(x):
+            outs = [
+                mapmaking._forward_single_freq(x, ba_f[s], phases[s])
+                for s in range(nsites)
+            ]
+            return jnp.concatenate(outs)
+
+        xd = jnp.zeros(nalm, dtype=jnp.float64)
+        _tr = jax.linear_transpose(fwd, xd)
+
+        def adj(y):
+            return _tr(y)[0]
+
+        Nm12 = 1.0 / jnp.sqrt(Nd_f)
+        S12 = jnp.sqrt(Sd_f)
+
+        def at_fwd(x):
+            return Nm12 * fwd(S12 * x)
+
+        def at_adj(y):
+            return S12 * adj(Nm12 * y)
+
+        y_tilde = Nm12 * (y_f + n_f)
+        rhs = at_adj(y_tilde)
+
+        def normal_op(x):
+            return at_adj(at_fwd(x)) + x
+
+        x_tilde, _ = jax.scipy.sparse.linalg.cg(
+            normal_op, rhs, tol=tol, maxiter=maxiter
+        )
+        x_rec = S12 * x_tilde
+        return mapmaking.alm1d_to_hp(x_rec)
+
+    batch = (
+        fdata["beam_alms"],
+        fdata["y"],
+        fdata["Ndiag"],
+        fdata["Sdiag"],
+        fdata["noise"],
+    )
+    logger.info(
+        "Solving %d frequencies via lax.map (first call compiles)",
+        fdata["beam_alms"].shape[0],
+    )
+    return jax.lax.map(_solve_one, batch)
+
+
+def _build_atilde_for_freq(fdata, i):
+    """Build Atilde operators for frequency *i*."""
+    phases = fdata["phases"]
+    nsites = phases.shape[0]
+    nalm = fdata["Sdiag"].shape[1]
+    ba_f = fdata["beam_alms"][i]
+
+    def fwd(x):
+        outs = [
+            mapmaking._forward_single_freq(x, ba_f[s], phases[s])
+            for s in range(nsites)
+        ]
+        return jnp.concatenate(outs)
+
+    xd = jnp.zeros(nalm, dtype=jnp.float64)
+    _tr = jax.linear_transpose(fwd, xd)
+
+    def adj(y):
+        return _tr(y)[0]
+
+    return mapmaking.make_atilde_fns(
+        fdata["Ndiag"][i], fwd, adj, fdata["Sdiag"][i]
+    )
+
+
+# ------------------------------------------------------------------
 # Top-level orchestrator
 # ------------------------------------------------------------------
 
 
-def run_pipeline(config):
-    """Run the full mapmaking pipeline from a config dict.
-
-    Set ``config["solver"]`` to ``"cg"`` (default) for the
-    JAX CG path or ``"svd"`` for the original ARPACK SVD path.
-
-    Returns
-    -------
-    results : dict
-
-    """
-    # Sky
+def _run_single_freq(config):
+    """Original single-frequency pipeline (backward compat)."""
     logger.info("Setting up sky")
     sky, x_packed, x_hp, freqs, sim_freq = setup_sky(config)
 
-    # Times
     obs = config["observation"]
     tstart = Time(obs["start_time"])
     tend = tstart + obs["n_sidereal_days"] * u.sday
@@ -591,7 +815,6 @@ def run_pipeline(config):
     post_cfg = config.get("posterior", {})
     noise_seed = post_cfg.get("seed", 1420)
 
-    # Build operators and forward model
     if solver == "cg":
         logger.info("Building JAX operators")
         ops = build_stacked_A_jax(config, sky, times.jd, sim_freq)
@@ -603,15 +826,11 @@ def run_pipeline(config):
         logger.info("Running forward model")
         y = A @ x_packed
 
-    # Noise
-    df = (freqs[1] - freqs[0]) * 1e6  # Hz
+    df = (freqs[1] - freqs[0]) * 1e6
     dt = (times[1] - times[0]).to_value(u.s)
     Ndiag, noise = compute_noise(y, df, dt, seed=noise_seed)
-
-    # Prior
     Sdiag = compute_prior(x_packed, lmax)
 
-    # Solve
     if solver == "cg":
         atilde_fwd, atilde_adj = mapmaking.make_atilde_fns(
             Ndiag,
@@ -619,7 +838,6 @@ def run_pipeline(config):
             ops["adjoint_fn"],
             Sdiag,
         )
-
         logger.info("Solving Wiener filter via CG")
         cg_cfg = config.get("cg", {})
         x_rec_hp, cg_info = wiener_filter_cg(
@@ -633,7 +851,7 @@ def run_pipeline(config):
             maxiter=cg_cfg.get("maxiter", 2000),
         )
         x_rec_hp = np.asarray(x_rec_hp)
-        logger.info("CG info=%d", cg_info)
+        logger.info("CG info=%s", cg_info)
 
         logger.info("Randomized SVD for posterior")
         k = svd_cfg.get("n_singular_values", 800)
@@ -653,7 +871,6 @@ def run_pipeline(config):
         k = svd_cfg.get("n_singular_values", 1200)
         U, Sigma, Vh = run_svd(Atilde, k=k)
 
-    # Select modes
     threshold = svd_cfg.get("threshold", 1e-10)
     nvec = select_nvec(Sigma, threshold=threshold)
     logger.info(
@@ -662,7 +879,6 @@ def run_pipeline(config):
         threshold,
     )
 
-    # SVD Wiener filter (SVD path only)
     if solver != "cg":
         logger.info("Applying Wiener filter")
         x_rec_hp, _ = wiener_filter(
@@ -676,11 +892,9 @@ def run_pipeline(config):
             noise,
         )
 
-    # Filter factors for diagnostics
     Dnum = Sigma[:nvec]
     D = Dnum / (1 + Dnum**2)
 
-    # Posterior uncertainty
     logger.info("Computing posterior uncertainty")
     nside = 128
     n_real = post_cfg.get("n_realizations", 1000)
@@ -695,7 +909,6 @@ def run_pipeline(config):
         seed=noise_seed,
     )
 
-    # Compute best map for diagnostics
     fl = np.ones(lmax + 1)
     plot_lmax = min(10, lmax)
     fl[plot_lmax + 1 :] = 0.0
@@ -719,6 +932,125 @@ def run_pipeline(config):
     }
 
 
+def _run_multi_freq(config):
+    """Multi-frequency pipeline with lax.map solve."""
+    obs = config["observation"]
+    tstart = Time(obs["start_time"])
+    tend = tstart + obs["n_sidereal_days"] * u.sday
+    times = cro.utils.time_array(
+        t_start=tstart,
+        t_end=tend,
+        N_times=obs["n_times"],
+    )
+    lmax = obs["lmax"]
+    fr = config["sky"]["freq_range"]
+    freqs = np.arange(fr[0], fr[1])
+
+    # Data prep (Python loop)
+    fdata = _prepare_freq_data(config, times, freqs)
+    nfreq = len(fdata["freq_indices"])
+
+    # CG solve (lax.map — lightweight output)
+    x_rec_all = np.asarray(_solve_all_freqs(fdata, config))
+
+    # rSVD + posterior (Python loop — one freq at a time
+    # to avoid OOM from stacking Vh across frequencies)
+    svd_cfg = config.get("svd", {})
+    post_cfg = config.get("posterior", {})
+    noise_seed = post_cfg.get("seed", 1420)
+    threshold = svd_cfg.get("threshold", 1e-10)
+    k = svd_cfg.get("n_singular_values", 800)
+    p_over = svd_cfg.get("oversampling", 10)
+    nside = 128
+    n_real = post_cfg.get("n_realizations", 1000)
+    nalm = fdata["Sdiag"].shape[1]
+    ndata = fdata["y"].shape[1]
+
+    Sigma_list, nvec_list = [], []
+    std_alm_list, std_map_list = [], []
+    cl_prior_list, sigma2_prior_list = [], []
+    best_map_list = []
+
+    for i in range(nfreq):
+        logger.info(
+            "rSVD + posterior freq %d/%d",
+            i + 1,
+            nfreq,
+        )
+        at_fwd, at_adj = _build_atilde_for_freq(fdata, i)
+        _, Sig_i, Vh_i = mapmaking.randomized_svd_jax(
+            at_fwd, at_adj, nalm, ndata, k, p=p_over
+        )
+        Sig_i = np.asarray(Sig_i)
+        Vh_i = np.asarray(Vh_i)
+        Sigma_list.append(Sig_i)
+
+        nv = select_nvec(Sig_i, threshold=threshold)
+        nvec_list.append(nv)
+
+        post = posterior_uncertainty(
+            Vh_i,
+            Sig_i,
+            np.asarray(fdata["Sdiag"][i]),
+            nv,
+            lmax,
+            nside=nside,
+            n_realizations=n_real,
+            seed=noise_seed,
+        )
+        std_alm_list.append(post["std_alm"])
+        std_map_list.append(post["std_map"])
+        cl_prior_list.append(post["cl_prior"])
+        sigma2_prior_list.append(post["sigma2_prior"])
+
+        fl = np.ones(lmax + 1)
+        fl[min(10, lmax) + 1 :] = 0.0
+        bm = hp.alm2map(hp.almxfl(x_rec_all[i], fl), nside=nside)
+        best_map_list.append(bm)
+        del Vh_i  # free ~200 MB per freq
+
+    return {
+        "run_name": run_name_from_config(config),
+        "freqs": freqs,
+        "sim_freqs": fdata["sim_freqs"],
+        "lmax": lmax,
+        "x_true": fdata["x_hp"],
+        "x_rec": x_rec_all,
+        "std_alm": np.stack(std_alm_list),
+        "std_map": np.stack(std_map_list),
+        "cl_prior": np.stack(cl_prior_list),
+        "sigma2_prior": np.array(sigma2_prior_list),
+        "Sigma": np.stack(Sigma_list),
+        "nvec": np.array(nvec_list),
+        "best_map": np.stack(best_map_list),
+        "config": config,
+        "multi_freq": True,
+    }
+
+
+def run_pipeline(config):
+    """Run the full mapmaking pipeline from a config dict.
+
+    When ``freq_index`` is set in the sky config, runs the
+    single-frequency path (backward compatible).  Otherwise
+    runs all frequencies via ``lax.map``.
+
+    Set ``config["solver"]`` to ``"cg"`` (default) or
+    ``"svd"`` for the original ARPACK path.
+
+    Returns
+    -------
+    results : dict
+
+    """
+    sky_cfg = config.get("sky", {})
+    # freq_indices (plural) activates multi-freq even if
+    # freq_index is also present from defaults.
+    if "freq_index" in sky_cfg and "freq_indices" not in sky_cfg:
+        return _run_single_freq(config)
+    return _run_multi_freq(config)
+
+
 # ------------------------------------------------------------------
 # Save / load
 # ------------------------------------------------------------------
@@ -728,20 +1060,23 @@ def save_results(results, path):
     """Save results dict to npz."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(
-        path,
-        freqs=results["freqs"],
-        lmax=results["lmax"],
-        x_true=results["x_true"],
-        x_rec=results["x_rec"],
-        cl_prior=results["cl_prior"],
-        sigma2_prior=results["sigma2_prior"],
-        std_alm=results["std_alm"],
-        std_map=results["std_map"],
-        Sigma=results["Sigma"],
-        nvec=results["nvec"],
-        config_yaml=yaml.dump(results["config"]),
-    )
+    d = {
+        "freqs": results["freqs"],
+        "lmax": results["lmax"],
+        "x_true": results["x_true"],
+        "x_rec": results["x_rec"],
+        "cl_prior": results["cl_prior"],
+        "sigma2_prior": results["sigma2_prior"],
+        "std_alm": results["std_alm"],
+        "std_map": results["std_map"],
+        "Sigma": results["Sigma"],
+        "nvec": results["nvec"],
+        "config_yaml": yaml.dump(results["config"]),
+    }
+    if results.get("multi_freq"):
+        d["sim_freqs"] = results["sim_freqs"]
+        d["multi_freq"] = True
+    np.savez(path, **d)
     logger.info("Saved results to %s", path)
 
 
@@ -759,25 +1094,39 @@ def _make_md_cell(source):
 
 
 def generate_notebook(results, npz_path, output_path):
-    """
-    Generate and execute a diagnostic notebook.
-
-    Parameters
-    ----------
-    results : dict
-        Pipeline results.
-    npz_path : str or Path
-        Path to the saved npz file (used in notebook cells).
-    output_path : str or Path
-        Where to save the notebook.
-
-    """
+    """Generate and execute a diagnostic notebook."""
     npz_path = Path(npz_path).resolve()
     output_path = Path(output_path).resolve()
     nb = nbformat.v4.new_notebook()
     cells = []
+    is_multi = results.get("multi_freq", False)
+    cfg = results["config"]
+    site_names = ", ".join(s["name"] for s in cfg["sites"])
 
-    # Setup
+    if is_multi:
+        cells += _nb_cells_multi(results, npz_path, cfg, site_names)
+    else:
+        cells += _nb_cells_single(results, npz_path, cfg, site_names)
+
+    nb.cells = cells
+    ep = ExecutePreprocessor(timeout=600, kernel_name="python3")
+    try:
+        ep.preprocess(
+            nb,
+            {"metadata": {"path": str(output_path.parent)}},
+        )
+    except Exception:
+        logger.warning("Notebook execution failed; saving unexecuted notebook")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w") as f:
+        nbformat.write(nb, f)
+    logger.info("Saved notebook to %s", output_path)
+
+
+def _nb_cells_single(results, npz_path, cfg, sites):
+    """Notebook cells for single-frequency results."""
+    cells = []
     cells.append(
         _make_code_cell(
             "import numpy as np\n"
@@ -799,29 +1148,23 @@ def generate_notebook(results, npz_path, output_path):
             'std_map = d["std_map"]\n'
         )
     )
-
-    # Config summary
-    cfg = results["config"]
-    site_names = ", ".join(s["name"] for s in cfg["sites"])
+    lmax_cfg = cfg["observation"]["lmax"]
+    k_cfg = cfg.get("svd", {}).get("n_singular_values", "N/A")
     cells.append(
         _make_md_cell(
             f"# Diagnostics: {results['run_name']}\n\n"
-            f"**Sites:** {site_names}  \n"
-            f"**lmax:** {cfg['observation']['lmax']}  \n"
+            f"**Sites:** {sites}  \n"
+            f"**lmax:** {lmax_cfg}  \n"
             f"**nvec:** {results['nvec']}  \n"
-            f"**SVD k:** {cfg.get('svd', {}).get('n_singular_values', 'N/A')}"
+            f"**SVD k:** {k_cfg}"
         )
     )
-
-    # Singular values
     cells.append(_make_md_cell("## Singular Value Spectrum"))
     cells.append(
         _make_code_cell(
             "fig = msplt.plot_singular_values(Sigma, nvec=nvec)\nplt.show()"
         )
     )
-
-    # Filter factors
     cells.append(_make_md_cell("## Filter Factors"))
     cells.append(
         _make_code_cell(
@@ -831,60 +1174,47 @@ def generate_notebook(results, npz_path, output_path):
             "plt.show()"
         )
     )
-
-    # Alm comparison
     cells.append(_make_md_cell("## Alm Comparison"))
     cells.append(
         _make_code_cell(
             "fig = msplt.plot_alm_comparison(\n"
-            "    x_true, x_rec, std_alm, lmax, lmax_plot=8\n"
-            ")\n"
-            "plt.show()"
+            "    x_true, x_rec, std_alm, "
+            "lmax, lmax_plot=8\n"
+            ")\nplt.show()"
         )
     )
-
-    # Power spectra
     cells.append(_make_md_cell("## Power Spectra"))
     cells.append(
         _make_code_cell(
-            "fig = msplt.plot_power_spectra(x_true, x_rec, std_alm)\n"
+            "fig = msplt.plot_power_spectra("
+            "x_true, x_rec, std_alm)\n"
             "plt.show()"
         )
     )
-
-    # Transfer function
     cells.append(_make_md_cell("## Transfer Function"))
     cells.append(
         _make_code_cell(
             "fig = msplt.plot_transfer_function(x_true, x_rec)\nplt.show()"
         )
     )
-
-    # Maps equatorial
     cells.append(_make_md_cell("## Maps & Residuals (Equatorial)"))
     cells.append(
         _make_code_cell(
             "fig = msplt.plot_maps_and_residuals(\n"
             "    x_true, x_rec, lmax, plot_lmax=10,\n"
             "    nside=128, plot_galactic=False\n"
-            ")\n"
-            "plt.show()"
+            ")\nplt.show()"
         )
     )
-
-    # Maps galactic
     cells.append(_make_md_cell("## Maps & Residuals (Galactic)"))
     cells.append(
         _make_code_cell(
             "fig = msplt.plot_maps_and_residuals(\n"
             "    x_true, x_rec, lmax, plot_lmax=10,\n"
             "    nside=128, plot_galactic=True\n"
-            ")\n"
-            "plt.show()"
+            ")\nplt.show()"
         )
     )
-
-    # Posterior maps
     cells.append(_make_md_cell("## Posterior Uncertainty"))
     cells.append(
         _make_code_cell(
@@ -894,22 +1224,109 @@ def generate_notebook(results, npz_path, output_path):
             "    hp.almxfl(x_rec, fl), nside=128\n"
             ")\n"
             "fig = msplt.plot_posterior_maps(\n"
-            "    std_map, sigma2_prior, best_map, nside=128\n"
-            ")\n"
-            "plt.show()"
+            "    std_map, sigma2_prior, "
+            "best_map, nside=128\n"
+            ")\nplt.show()"
         )
     )
+    return cells
 
-    nb.cells = cells
 
-    # Execute
-    ep = ExecutePreprocessor(timeout=600, kernel_name="python3")
-    try:
-        ep.preprocess(nb, {"metadata": {"path": str(output_path.parent)}})
-    except Exception:
-        logger.warning("Notebook execution failed; saving unexecuted notebook")
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w") as f:
-        nbformat.write(nb, f)
-    logger.info("Saved notebook to %s", output_path)
+def _nb_cells_multi(results, npz_path, cfg, sites):
+    """Notebook cells for multi-frequency results."""
+    cells = []
+    cells.append(
+        _make_code_cell(
+            "import numpy as np\n"
+            "import healpy as hp\n"
+            "import matplotlib.pyplot as plt\n"
+            "import mistsim.plotting as msplt\n"
+            "%matplotlib inline\n\n"
+            f'd = np.load("{npz_path}")\n'
+            'freqs = d["freqs"]\n'
+            'sim_freqs = d["sim_freqs"]\n'
+            'lmax = int(d["lmax"])\n'
+            "nf = len(sim_freqs)\n"
+            'x_true = d["x_true"]\n'
+            'x_rec = d["x_rec"]\n'
+            'std_alm = d["std_alm"]\n'
+            'Sigma = d["Sigma"]\n'
+            'nvec = d["nvec"]\n'
+            'std_map = d["std_map"]\n'
+            'cl_prior = d["cl_prior"]\n'
+            'sigma2_prior = d["sigma2_prior"]\n'
+        )
+    )
+    lmax_cfg = cfg["observation"]["lmax"]
+    k_cfg = cfg.get("svd", {}).get("n_singular_values", "N/A")
+    cells.append(
+        _make_md_cell(
+            f"# Diagnostics: {results['run_name']}\n\n"
+            f"**Sites:** {sites}  \n"
+            f"**lmax:** {lmax_cfg}  \n"
+            f"**Frequencies:** {len(results['sim_freqs'])}"
+            f"  \n**SVD k:** {k_cfg}"
+        )
+    )
+    # Per-frequency diagnostics
+    cells.append(_make_md_cell("## Per-Frequency Diagnostics"))
+    cells.append(
+        _make_code_cell(
+            "for fi in range(nf):\n"
+            "    freq_mhz = sim_freqs[fi]\n"
+            '    print(f"\\n=== {freq_mhz:.0f} MHz ==='
+            '")\n'
+            "    nv = int(nvec[fi])\n"
+            "    fig = msplt.plot_singular_values(\n"
+            "        Sigma[fi], nvec=nv)\n"
+            "    plt.show()\n"
+            "    fig = msplt.plot_alm_comparison(\n"
+            "        x_true[fi], x_rec[fi],\n"
+            "        std_alm[fi], lmax, lmax_plot=8)\n"
+            "    plt.show()\n"
+            "    fig = msplt.plot_power_spectra(\n"
+            "        x_true[fi], x_rec[fi],\n"
+            "        std_alm[fi])\n"
+            "    plt.show()\n"
+            "    fig = msplt.plot_transfer_function(\n"
+            "        x_true[fi], x_rec[fi])\n"
+            "    plt.show()\n"
+        )
+    )
+    # Cross-frequency comparison
+    cells.append(_make_md_cell("## Cross-Frequency Comparison"))
+    cells.append(
+        _make_code_cell(
+            "fig, ax = plt.subplots(figsize=(10, 5))\n"
+            "for fi in range(nf):\n"
+            "    ax.semilogy(Sigma[fi],\n"
+            "        label=f'{sim_freqs[fi]:.0f} MHz')\n"
+            "ax.set_xlabel('Index')\n"
+            "ax.set_ylabel('Singular Value')\n"
+            "ax.set_title("
+            "'Singular Values Across Frequencies')\n"
+            "ax.legend()\n"
+            "ax.grid(alpha=0.3)\n"
+            "plt.show()\n\n"
+            "fig, ax = plt.subplots(figsize=(10, 5))\n"
+            "for fi in range(nf):\n"
+            "    cl_t = hp.alm2cl(x_true[fi])\n"
+            "    cl_x = hp.alm2cl(\n"
+            "        x_true[fi], x_rec[fi])\n"
+            "    v = cl_t > 0\n"
+            "    tf = np.zeros_like(cl_t)\n"
+            "    tf[v] = cl_x[v] / cl_t[v]\n"
+            "    ax.plot(tf,\n"
+            "        label=f'{sim_freqs[fi]:.0f} MHz')\n"
+            "ax.axhline(1, color='k', ls='--', "
+            "alpha=0.5)\n"
+            "ax.set_xlabel(r'$\\ell$')\n"
+            "ax.set_ylabel('Transfer Function')\n"
+            "ax.set_title("
+            "'Transfer Functions Across Frequencies')\n"
+            "ax.legend()\n"
+            "ax.grid(alpha=0.3)\n"
+            "plt.show()\n"
+        )
+    )
+    return cells

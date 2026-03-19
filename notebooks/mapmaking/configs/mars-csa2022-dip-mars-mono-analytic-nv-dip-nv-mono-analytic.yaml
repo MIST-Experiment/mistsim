@@ -1,8 +1,0 @@
-beams:
-  - mars-csa2022-dip
-  - mars-mono-analytic
-  - nv-dip
-  - nv-mono-analytic
-
-svd:
-  n_singular_values: 1500

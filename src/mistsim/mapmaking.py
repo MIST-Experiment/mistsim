@@ -81,6 +81,31 @@ def pack_s2fft_to_real(flm_s2fft):
     return jnp.ravel(pack_vmap(flm_s2fft, lmax))
 
 
+def _forward_single_freq(x, beam_alm_f, phases):
+    """Forward for one frequency, one site.
+
+    Parameters
+    ----------
+    x : jax.Array
+        Packed real alm, shape ``(nalm,)``.
+    beam_alm_f : jax.Array
+        Beam alm for one frequency, shape ``(L, 2L-1)``.
+    phases : jax.Array
+        Rotation phases, shape ``(ntimes, 2L-1)``.
+
+    Returns
+    -------
+    y : jax.Array
+        Waterfall for this site/freq, shape ``(ntimes,)``.
+
+    """
+    lmax = beam_alm_f.shape[0] - 1
+    sky_alm = _unpack_single_freq(x, lmax)
+    wf = cro.simulator.convolve(beam_alm_f[None], sky_alm[None], phases)
+    norm = beam_alm_f[0, lmax] * jnp.sqrt(4 * jnp.pi)
+    return (wf[:, 0] / norm).real
+
+
 @jax.jit
 def _forward_jax(x, beam_alm, phases):
     """
@@ -511,14 +536,12 @@ def randomized_svd_jax(
     Omega = jax.random.normal(key, (k + p, nalm))
 
     # Y = Atilde @ Omega^T: apply forward to each row
-    Y_cols = [atilde_fwd(Omega[i]) for i in range(k + p)]
-    Y = jnp.stack(Y_cols, axis=1)  # (ndata, k+p)
+    Y = jax.lax.map(atilde_fwd, Omega).T  # (ndata, k+p)
 
     Q, _ = jnp.linalg.qr(Y)
 
     # B = Atilde^H @ Q: apply adjoint to each column
-    B_cols = [atilde_adj(Q[:, i]) for i in range(k + p)]
-    B = jnp.stack(B_cols, axis=1)  # (nalm, k+p)
+    B = jax.lax.map(atilde_adj, Q.T).T  # (nalm, k+p)
 
     # SVD of B^T: (k+p, nalm)
     U_B, Sigma_full, Vh_B = jnp.linalg.svd(B.T, full_matrices=False)
