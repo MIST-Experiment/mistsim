@@ -7,12 +7,12 @@ cd "$(dirname "$0")/.."
 
 RUNS=(
     mars-nv
-    mars-nv-multifreq
     mars-nv-mono
     mars-nv-alma
     mars-nv-4beam
     all-sites
     test-compare-old
+    mars-nv-multifreq
 )
 
 DONEFILE="scripts/.mapmaking_done"
