@@ -204,7 +204,6 @@ def plot_transfer_function(x_true, x_rec):
     ax.set_ylabel(r"$C_\ell^{\mathrm{cross}} / C_\ell^{\mathrm{true}}$")
     ax.set_title("Wiener Filter Empirical Transfer Function")
     ax.grid(alpha=0.3)
-    fig.tight_layout()
     return fig
 
 
@@ -320,7 +319,6 @@ def plot_singular_values(Sigma, nvec=None):
     ax.set_ylabel("Singular Value")
     ax.set_title("Singular Value Spectrum")
     ax.grid(alpha=0.3)
-    fig.tight_layout()
     return fig
 
 
@@ -339,7 +337,6 @@ def plot_filter_factors(D):
     ax.set_ylabel("Filter Factor")
     ax.set_title("Wiener Filter Factors")
     ax.grid(alpha=0.3)
-    fig.tight_layout()
     return fig
 
 
