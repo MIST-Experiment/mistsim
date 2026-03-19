@@ -1,3 +1,7 @@
+# Test config to reproduce the old mars-dip_nv-dip.npz results.
+# Uses explicit sites format to add horizon_max_theta.
+run_name: "test-compare-old-mars-dip-nv-dip"
+
 sky:
   haslam_file: "../../data/haslam_galactic.npz"
   spectral_index: -2.55
@@ -11,11 +15,13 @@ observation:
   lmax: 179
 
 sites:
-  - name: "alma-csa2022-dip"
+  - name: "mars-csa2022-dip"
     beam_file: "../../data/20240806_for_lisa/csa2022_beam2.npz"
-    lat: -23.02917
-    lon: -67.75500
-    alt: 5050
+    lat: 79.41833
+    lon: -90.74750
+    alt: 150
+    horizon_max_theta: 80
+    beam_az_rot: 80
 
   - name: "nv-dip"
     beam_file: "../../data/20240806_for_lisa/jackpot_beam2.npz"
@@ -24,20 +30,8 @@ sites:
     alt: 0
     beam_az_rot: 26
 
-  - name: "alma-mono-analytic"
-    beam_type: "sin2"
-    lat: -23.02917
-    lon: -67.75500
-    alt: 5050
-
-  - name: "nv-mono-analytic"
-    beam_type: "sin2"
-    lat: 37.21333
-    lon: -117.09111
-    alt: 0
-
 svd:
-  n_singular_values: 1500
+  n_singular_values: 800
   threshold: 1.0e-10
 
 posterior:
@@ -46,4 +40,4 @@ posterior:
 
 output:
   results_dir: "../results"
-  generate_notebook: true
+  generate_notebook: false
