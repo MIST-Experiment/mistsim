@@ -78,5 +78,5 @@ class _SkyAlm(eqx.Module):
     def compute_alm(self):
         return self._sky_alm
 
-    def compute_alm_eq(self, world="earth"):
+    def compute_alm_eq(self, world="earth", et=None):
         return self._sky_alm
