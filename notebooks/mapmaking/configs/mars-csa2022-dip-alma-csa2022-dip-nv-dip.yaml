@@ -1,4 +1,0 @@
-beams: [mars-csa2022-dip, alma-csa2022-dip, nv-dip]
-
-svd:
-  n_singular_values: 1200

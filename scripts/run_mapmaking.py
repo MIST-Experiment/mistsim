@@ -26,12 +26,23 @@ logging.basicConfig(
 logging.getLogger("healpy").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
+DEFAULT_RUNS = (
+    Path(__file__).resolve().parent
+    / "../notebooks/mapmaking/configs/runs.yaml"
+)
+
 
 def main():
     parser = argparse.ArgumentParser(
         description="Run MIST SVD mapmaking pipeline",
     )
-    parser.add_argument("config", help="Path to YAML config file")
+    parser.add_argument("run", help="Run name (key under runs: in YAML)")
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=str(DEFAULT_RUNS),
+        help="Path to runs.yaml (default: %(default)s)",
+    )
     parser.add_argument(
         "--nvec",
         type=int,
@@ -55,23 +66,41 @@ def main():
         default=None,
         help="Override output directory",
     )
+    parser.add_argument(
+        "--freq-indices",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Override frequency indices (multi-freq)",
+    )
     args = parser.parse_args()
 
-    config = load_config(args.config)
+    config = load_config(args.config, args.run)
 
     # Apply CLI overrides
     if args.n_singular_values is not None:
         config.setdefault("svd", {})["n_singular_values"] = (
             args.n_singular_values
         )
+    if args.freq_indices is not None:
+        config.setdefault("sky", {})["freq_indices"] = args.freq_indices
+        # Remove freq_index so multi-freq path activates
+        config["sky"].pop("freq_index", None)
 
     # Run pipeline
     results = run_pipeline(config)
 
-    # Override nvec if requested
+    # Override nvec if requested (single-freq only)
     if args.nvec is not None:
-        logger.info("Overriding nvec: %d -> %d", results["nvec"], args.nvec)
-        results["nvec"] = args.nvec
+        if results.get("multi_freq"):
+            logger.warning("--nvec ignored for multi-freq runs")
+        else:
+            logger.info(
+                "Overriding nvec: %d -> %d",
+                results["nvec"],
+                args.nvec,
+            )
+            results["nvec"] = args.nvec
 
     # Output directories (paths resolved by load_config)
     out_cfg = config.get("output", {})

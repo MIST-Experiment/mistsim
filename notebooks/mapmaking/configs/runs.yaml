@@ -56,7 +56,8 @@ defaults:
     haslam_file: "../../data/haslam_galactic.npz"
     spectral_index: -2.55
     freq_range: [25, 126]
-    freq_index: 0
+    freq_index: 0  # single-freq; remove to run all freqs
+    # freq_indices: all  # or list like [0, 25, 50, 75, 100]
 
   observation:
     start_time: "2026-02-25 12:27"
@@ -72,3 +73,56 @@ defaults:
     results_dir: "../results"
     notebooks_dir: "../notebooks_out"
     generate_notebook: true
+
+runs:
+  mars-nv:
+    beams: [mars-csa2022-dip, nv-dip]
+    svd:
+      n_singular_values: 800
+
+  mars-nv-multifreq:
+    beams: [mars-csa2022-dip, nv-dip]
+    sky:
+      freq_indices: all
+    svd:
+      n_singular_values: 800
+
+  mars-nv-mono:
+    beams: [mars-csa2022-dip, nv-dip, nv-mono-analytic]
+    svd:
+      n_singular_values: 1200
+
+  mars-nv-alma:
+    beams: [mars-csa2022-dip, alma-csa2022-dip, nv-dip]
+    svd:
+      n_singular_values: 1200
+
+  mars-nv-4beam:
+    beams:
+      - mars-csa2022-dip
+      - mars-mono-analytic
+      - nv-dip
+      - nv-mono-analytic
+    svd:
+      n_singular_values: 1500
+
+  all-sites:
+    beams:
+      - mars-csa2022-dip
+      - mars-mono-analytic
+      - nv-dip
+      - nv-mono-analytic
+      - alma-csa2022-dip
+      - alma-mono-analytic
+    svd:
+      n_singular_values: 1500
+
+  test-compare-old:
+    # Reproduce the old mars-dip_nv-dip.npz results.
+    # Uses horizon-masked variant of the MARS CSA2022 beam.
+    run_name: "test-compare-old-mars-dip-nv-dip"
+    beams: [mars-csa2022-dip-horizon, nv-dip]
+    svd:
+      n_singular_values: 800
+    output:
+      generate_notebook: false
