@@ -180,7 +180,8 @@ def run_name_from_config(config):
 
 def _scale_map(m, freqs, beta=-2.55, f0=408, tcmb=2.725):
     scale = (freqs / f0) ** beta
-    return (m - tcmb)[None, :] * scale[:, None] + tcmb
+    shape = (-1,) + (1,) * m.ndim
+    return (m - tcmb)[None] * scale.reshape(shape) + tcmb
 
 
 def setup_sky(config, freq_ix=None, haslam_scaled=None):
@@ -216,9 +217,15 @@ def setup_sky(config, freq_ix=None, haslam_scaled=None):
 
     if haslam_scaled is None:
         d = np.load(sky_cfg["haslam_file"])
-        haslam_onefreq = d["m"][-1]
-        f0_haslam = d["freqs"][-1]
         beta = sky_cfg.get("spectral_index", -2.55)
+        if "f0" in d:
+            # MWSS format: single ref map + reference freq
+            haslam_onefreq = d["m"]
+            f0_haslam = float(d["f0"])
+        else:
+            # Legacy HEALPix format: all freqs stacked
+            haslam_onefreq = d["m"][-1]
+            f0_haslam = d["freqs"][-1]
         haslam_scaled = _scale_map(
             haslam_onefreq, freqs, beta=beta, f0=f0_haslam
         )
@@ -228,10 +235,11 @@ def setup_sky(config, freq_ix=None, haslam_scaled=None):
     sim_freq = freqs[freq_ix]
     sky_map = haslam_scaled[freq_ix]
 
+    sampling = sky_cfg.get("sampling", "mwss")
     sky = Sky(
         sky_map[None],
         sim_freq,
-        sampling="healpix",
+        sampling=sampling,
         coord="galactic",
     )
 
@@ -634,9 +642,13 @@ def _prepare_freq_data(config, times, freqs):
 
     # Load and scale Haslam map once for all frequencies.
     d = np.load(sky_cfg["haslam_file"])
-    haslam_onefreq = d["m"][-1]
-    f0_haslam = d["freqs"][-1]
     beta = sky_cfg.get("spectral_index", -2.55)
+    if "f0" in d:
+        haslam_onefreq = d["m"]
+        f0_haslam = float(d["f0"])
+    else:
+        haslam_onefreq = d["m"][-1]
+        f0_haslam = d["freqs"][-1]
     haslam_scaled = _scale_map(
         haslam_onefreq, freqs_arr, beta=beta, f0=f0_haslam
     )

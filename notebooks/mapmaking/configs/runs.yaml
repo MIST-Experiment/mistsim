@@ -53,7 +53,7 @@ beams:
 
 defaults:
   sky:
-    haslam_file: "../../data/haslam_galactic.npz"
+    haslam_file: "../../data/haslam_galactic_mwss.npz"
     spectral_index: -2.55
     freq_range: [25, 126]
     freq_index: 0  # single-freq; remove to run all freqs
