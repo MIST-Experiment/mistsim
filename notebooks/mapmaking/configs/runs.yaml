@@ -14,6 +14,11 @@ sites:
     lon: -67.75500
     alt: 5050
 
+  southpole:
+    lat: -90.00000
+    lon: 0.00000
+    alt: 2800
+
 beams:
   mars-csa2022-dip:
     site: mars
@@ -49,6 +54,14 @@ beams:
 
   alma-mono-analytic:
     site: alma
+    beam_type: "sin2"
+
+  southpole-csa2022-dip:
+    site: southpole
+    beam_file: "../../data/20240806_for_lisa/csa2022_beam2.npz"
+
+  southpole-mono-analytic:
+    site: southpole
     beam_type: "sin2"
 
 defaults:
@@ -97,12 +110,21 @@ runs:
     svd:
       n_singular_values: 1200
 
-  mars-nv-4beam:
+  mars-nv-4beam:  # north only
     beams:
       - mars-csa2022-dip
       - mars-mono-analytic
       - nv-dip
       - nv-mono-analytic
+    svd:
+      n_singular_values: 1500
+
+  south-4beam:  # south only
+    beams:
+      - alma-csa2022-dip
+      - alma-mono-analytic
+      - southpole-csa2022-dip
+      - southpole-mono-analytic
     svd:
       n_singular_values: 1500
 
@@ -116,13 +138,3 @@ runs:
       - alma-mono-analytic
     svd:
       n_singular_values: 1500
-
-  test-compare-old:
-    # Reproduce the old mars-dip_nv-dip.npz results.
-    # Uses horizon-masked variant of the MARS CSA2022 beam.
-    run_name: "test-compare-old-mars-dip-nv-dip"
-    beams: [mars-csa2022-dip-horizon, nv-dip]
-    svd:
-      n_singular_values: 800
-    output:
-      generate_notebook: false
