@@ -214,9 +214,16 @@ def plot_maps_and_residuals(
     plot_lmax,
     nside=128,
     plot_galactic=False,
+    ratio=False,
 ):
     """
     Mollweide projections of true, recovered, and residual maps.
+
+    Parameters
+    ----------
+    ratio : bool
+        If True, plot fractional residual (true - rec) / true instead
+        of the absolute residual.
 
     Returns
     -------
@@ -229,7 +236,20 @@ def plot_maps_and_residuals(
     x_rec_low = hp.almxfl(x_rec, fl)
     map_true = hp.alm2map(x_true_low, nside=nside)
     map_rec = hp.alm2map(x_rec_low, nside=nside)
-    map_res = map_true - map_rec
+
+    if ratio:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            map_res = np.where(
+                map_true != 0,
+                (map_true - map_rec) / map_true,
+                0.0,
+            )
+        res_title = "Fractional Residual (True - Rec) / True"
+        res_label = "Fractional Residual"
+    else:
+        map_res = map_true - map_rec
+        res_title = "Residual (True - Rec)"
+        res_label = "Residual Error"
 
     if plot_galactic:
         coord = ["C", "G"]
@@ -278,13 +298,135 @@ def plot_maps_and_residuals(
         map_res,
         sub=(3, 1, 3),
         cbar=False,
-        title="Residual (True - Rec)",
+        title=res_title,
         cmap="coolwarm",
         min=-res_max,
         max=res_max,
         coord=coord,
     )
-    _add_cbar("Residual Error")
+    _add_cbar(res_label)
+    return fig
+
+
+def plot_comparison_grid(
+    x_true,
+    x_recs,
+    labels,
+    lmax,
+    plot_lmax,
+    nside=128,
+    plot_galactic=False,
+    frac_range=1.0,
+    ratio=True,
+):
+    """
+    Grid comparing multiple recovered maps against the true map.
+
+    Top row: true map then each recovered map (shared colorscale).
+    Bottom row: empty then residual for each (shared colorscale).
+
+    Parameters
+    ----------
+    x_true : array-like
+        True alm in healpy ordering.
+    x_recs : list of array-like
+        Recovered alms, one per run.
+    labels : list of str
+        Short label for each run.
+    lmax : int
+        Maximum ell of the alm arrays.
+    plot_lmax : int
+        Maximum ell to keep in the low-pass filter.
+    nside : int
+        HEALPix nside for map synthesis.
+    plot_galactic : bool
+        If True, rotate from equatorial to galactic.
+    frac_range : float
+        Symmetric range for residual colorbar. For ratio=True
+        this is the fractional range; for ratio=False it is
+        auto-scaled and this parameter is ignored.
+    ratio : bool
+        If True, plot fractional residual (true - rec) / true.
+        If False, plot absolute residual (true - rec).
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+
+    """
+    n = len(x_recs)
+    coord = ["C", "G"] if plot_galactic else ["C", "C"]
+
+    fl = np.ones(lmax + 1)
+    fl[plot_lmax + 1 :] = 0.0
+    map_true = hp.alm2map(hp.almxfl(x_true, fl), nside=nside)
+
+    maps_rec = []
+    maps_res = []
+    for xr in x_recs:
+        mr = hp.alm2map(hp.almxfl(xr, fl), nside=nside)
+        maps_rec.append(mr)
+        if ratio:
+            with np.errstate(divide="ignore", invalid="ignore"):
+                res = np.where(
+                    map_true != 0,
+                    (map_true - mr) / map_true,
+                    0.0,
+                )
+        else:
+            res = map_true - mr
+        maps_res.append(res)
+
+    vmin = min(map_true.min(), *(m.min() for m in maps_rec))
+    vmax = max(map_true.max(), *(m.max() for m in maps_rec))
+
+    if ratio:
+        res_max = frac_range
+        res_prefix = "Frac. Resid."
+    else:
+        res_max = max(np.max(np.abs(m)) for m in maps_res)
+        res_prefix = "Residual"
+
+    ncols = n + 1
+    fig = plt.figure(figsize=(5 * ncols, 7))
+
+    # Row 1: true + recovered maps
+    hp.mollview(
+        map_true,
+        sub=(2, ncols, 1),
+        title=f"True (l <= {plot_lmax})",
+        cmap="viridis",
+        min=vmin,
+        max=vmax,
+        coord=coord,
+        cbar=True,
+    )
+    for i, (mr, lab) in enumerate(zip(maps_rec, labels)):
+        hp.mollview(
+            mr,
+            sub=(2, ncols, i + 2),
+            title=lab,
+            cmap="viridis",
+            min=vmin,
+            max=vmax,
+            coord=coord,
+            cbar=True,
+        )
+
+    # Row 2: blank under true, then residuals
+    for i, (mres, lab) in enumerate(zip(maps_res, labels)):
+        hp.mollview(
+            mres,
+            sub=(2, ncols, ncols + i + 2),
+            title=f"{res_prefix}: {lab}",
+            cmap="coolwarm",
+            min=-res_max,
+            max=res_max,
+            coord=coord,
+            cbar=True,
+        )
+
+    fig.subplots_adjust(hspace=0.05, wspace=0.05)
     return fig
 
 
