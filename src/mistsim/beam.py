@@ -50,11 +50,11 @@ class Beam(cro.Beam):
             If None, it is assumed that the horizon is at
             theta = 90 degrees.
         beam_az_rot : float
-            Angle between the X-axis of the beam (antenna local frame)
-            and the local East direction, in degrees. The angle is
-            measured counter-clockwise from the local East direction.
-            For example, if the X-axis of the beam points towards the
-            local North direction, the `beam_az_rot` would be +90 deg.
+            Azimuthal rotation of the beam in degrees. The rotation is
+            defined in the astronomy convention, i.e., the angle
+            measured from the local north towards the local east, with
+            0 degrees corresponding to the local north and 90 degrees
+            corresponding to the local east.
         beam_tilt : float
             The tilt angle of the beam in degrees. The tilt is the
             angle measured from the local zenith towards the antenna
@@ -77,11 +77,13 @@ class Beam(cro.Beam):
                 FutureWarning,
                 stacklevel=4,
             )
+        # croissant expects X-axis along East
+        beam_rot = beam_az_rot - 90
         super().__init__(
             data,
             freqs,
             sampling=sampling,
             horizon=horizon,
-            beam_az_rot=beam_az_rot,
+            beam_rot=beam_rot,
             beam_tilt=beam_tilt,
         )
