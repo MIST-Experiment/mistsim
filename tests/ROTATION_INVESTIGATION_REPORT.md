@@ -258,6 +258,24 @@ beam_az_rot in the sim_comparison notebook:
 3. **Confirm with Raul** what `AZ_antenna_axis` he used. If non-zero,
    adjust: `beam_az_rot = 90 - AZ_antenna_axis`.
 
+## Convention change (croissant >= 5.1.4)
+
+Croissant renamed `beam_az_rot` to `beam_rot` and switched to the
+astronomical azimuth convention (N→E, positive = clockwise from above).
+The phase formula changed from `exp(-i*m*az)` to `exp(+i*m*az)`.
+
+In mistsim, `beam_az_rot` is now the **astronomical azimuth** of the
+beam's X-axis: 0 = North, 90 = East.  The old formula
+`beam_az_rot = 90 - az_from_north` simplifies to
+**`beam_az_rot = az_from_north`**.
+
+Updated config values:
+
+| Site   | Orientation  | Old beam_az_rot | New beam_az_rot |
+|--------|--------------|-----------------|-----------------|
+| MARS   | 10 deg N→E   | 80              | 10              |
+| Nevada | 64 deg N→E   | 26              | 64              |
+
 ## Test script
 
 All tests are in `tests/test_rotation_investigation.py`. Run with:
