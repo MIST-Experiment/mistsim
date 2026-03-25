@@ -639,7 +639,7 @@ toml = [
 
 [[package]]
 name = "croissant-sim"
-version = "5.1.2"
+version = "5.1.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "astropy", version = "6.1.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -652,9 +652,9 @@ dependencies = [
     { name = "s2fft", version = "1.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "s2fft", version = "1.4.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/34/7f/d9411841548a8be6335f9e047998d22431d794ce41a0fa38c46ef34276f3/croissant_sim-5.1.2.tar.gz", hash = "sha256:65be5725cf7ef9f973502dff02ed12173dba5b4c46419bed52e46e02b861d20e", size = 18785475, upload-time = "2026-03-20T00:14:24.243Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6e/de/07a5e565fe05a75b1d621922bf61447fc6c8a72809f07c38c8d37d4a810c/croissant_sim-5.1.4.tar.gz", hash = "sha256:5c16eef724022789852eb604eedb5d79632ea41d5080e7346394dc9b88738291", size = 18788278, upload-time = "2026-03-25T23:18:07.456Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/02/f6/69e23594a37062c0cc80d987121791fd25a46390829e29bca466573d40d9/croissant_sim-5.1.2-py3-none-any.whl", hash = "sha256:6368e16eb5dbb34637b4a65f4f2f780db135eb933a0a2622bfb1261625175718", size = 23073, upload-time = "2026-03-20T00:14:22.519Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/07/1dc9a8a411847848dc898fc04471c67809d8c8146c19cd84774ac35a4a32/croissant_sim-5.1.4-py3-none-any.whl", hash = "sha256:fff6f50bdbd4028b4c787f6e72d0c60bab2975406de5d00f19e38aab7eced3f6", size = 23207, upload-time = "2026-03-25T23:18:04.504Z" },
 ]
 
 [[package]]
@@ -2091,7 +2091,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "croissant-sim", specifier = ">=5.0.0" },
+    { name = "croissant-sim", specifier = ">=5.1.4" },
     { name = "equinox" },
     { name = "jax", specifier = "<0.6.0" },
     { name = "numpy" },
