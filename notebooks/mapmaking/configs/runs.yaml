@@ -23,12 +23,12 @@ beams:
   mars-csa2022-dip:
     site: mars
     beam_file: "../../data/20240806_for_lisa/csa2022_beam2.npz"
-    beam_az_rot: 80
+    beam_az_rot: 10
 
   mars-csa2022-dip-horizon:
     site: mars
     beam_file: "../../data/20240806_for_lisa/csa2022_beam2.npz"
-    beam_az_rot: 80
+    beam_az_rot: 10
     horizon_max_theta: 80
 
   mars-lake-dip:
@@ -38,7 +38,7 @@ beams:
   nv-dip:
     site: nv
     beam_file: "../../data/20240806_for_lisa/jackpot_beam2.npz"
-    beam_az_rot: 26
+    beam_az_rot: 64
 
   mars-mono-analytic:
     site: mars
