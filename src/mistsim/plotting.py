@@ -260,6 +260,9 @@ def plot_maps_and_residuals(
     vmin = min(map_true.min(), map_rec.min())
     vmax = max(map_true.max(), map_rec.max())
     res_max = np.max(np.abs(map_res))
+    # Round up to 1 significant figure so colorbar ticks are even.
+    decade = 10 ** np.floor(np.log10(res_max))
+    res_max = np.ceil(res_max / decade) * decade
 
     def _add_cbar(label=""):
         ax = plt.gca()
