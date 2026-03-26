@@ -1,6 +1,24 @@
 import healpy as hp
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.ticker import MaxNLocator
+
+
+def _nice_clim(vmin, vmax):
+    """Round vmin down and vmax up to 1 significant figure.
+
+    Uses the data span to choose the rounding precision, so colorbar
+    ticks land on clean numbers and the endpoints are evenly spaced
+    with the interior ticks.
+    """
+    span = vmax - vmin
+    if span == 0:
+        return vmin, vmax
+    decade = 10 ** np.floor(np.log10(span))
+    return (
+        np.floor(vmin / decade) * decade,
+        np.ceil(vmax / decade) * decade,
+    )
 
 
 def plot_alm_comparison(x_true, x_rec, std_alm, lmax, lmax_plot=5):
@@ -257,23 +275,28 @@ def plot_maps_and_residuals(
         coord = ["C", "C"]
 
     fig = plt.figure(figsize=(8, 14))
-    vmin = min(map_true.min(), map_rec.min())
-    vmax = max(map_true.max(), map_rec.max())
-    res_max = np.max(np.abs(map_res))
-    # Round up to 1 significant figure so colorbar ticks are even.
-    decade = 10 ** np.floor(np.log10(res_max))
-    res_max = np.ceil(res_max / decade) * decade
+    vmin, vmax = _nice_clim(
+        min(map_true.min(), map_rec.min()),
+        max(map_true.max(), map_rec.max()),
+    )
+    res_raw = np.max(np.abs(map_res))
+    ticks = MaxNLocator(symmetric=True).tick_values(-res_raw, res_raw)
+    res_max = ticks[-1]
 
-    def _add_cbar(label=""):
+    def _add_cbar(label="", loc=None):
         ax = plt.gca()
         image = ax.get_images()[0]
-        fig.colorbar(
+        cb = fig.colorbar(
             image,
             ax=ax,
             orientation="vertical",
             shrink=0.6,
             pad=0.05,
-        ).set_label(label, fontsize=12)
+        )
+        if loc is not None:
+            cb.locator = loc
+            cb.update_ticks()
+        cb.set_label(label, fontsize=12)
 
     hp.mollview(
         map_true,
@@ -307,7 +330,7 @@ def plot_maps_and_residuals(
         max=res_max,
         coord=coord,
     )
-    _add_cbar(res_label)
+    _add_cbar(res_label, loc=MaxNLocator(symmetric=True))
     return fig
 
 
@@ -380,18 +403,31 @@ def plot_comparison_grid(
             res = map_true - mr
         maps_res.append(res)
 
-    vmin = min(map_true.min(), *(m.min() for m in maps_rec))
-    vmax = max(map_true.max(), *(m.max() for m in maps_rec))
+    vmin, vmax = _nice_clim(
+        min(map_true.min(), *(m.min() for m in maps_rec)),
+        max(map_true.max(), *(m.max() for m in maps_rec)),
+    )
 
     if ratio:
-        res_max = frac_range
+        res_raw = frac_range
         res_prefix = "Frac. Resid."
     else:
-        res_max = max(np.max(np.abs(m)) for m in maps_res)
+        res_raw = max(np.max(np.abs(m)) for m in maps_res)
         res_prefix = "Residual"
+    ticks = MaxNLocator(symmetric=True).tick_values(-res_raw, res_raw)
+    res_max = ticks[-1]
 
     ncols = n + 1
     fig = plt.figure(figsize=(5 * ncols, 7))
+
+    def _add_cbar(ax, loc=None):
+        im = ax.get_images()[0]
+        cb = fig.colorbar(
+            im, ax=ax, orientation="horizontal", shrink=0.6,
+        )
+        if loc is not None:
+            cb.locator = loc
+            cb.update_ticks()
 
     # Row 1: true + recovered maps
     hp.mollview(
@@ -402,8 +438,9 @@ def plot_comparison_grid(
         min=vmin,
         max=vmax,
         coord=coord,
-        cbar=True,
+        cbar=False,
     )
+    _add_cbar(plt.gca())
     for i, (mr, lab) in enumerate(zip(maps_rec, labels)):
         hp.mollview(
             mr,
@@ -413,10 +450,12 @@ def plot_comparison_grid(
             min=vmin,
             max=vmax,
             coord=coord,
-            cbar=True,
+            cbar=False,
         )
+        _add_cbar(plt.gca())
 
     # Row 2: blank under true, then residuals
+    sym = MaxNLocator(symmetric=True)
     for i, (mres, lab) in enumerate(zip(maps_res, labels)):
         hp.mollview(
             mres,
@@ -426,8 +465,9 @@ def plot_comparison_grid(
             min=-res_max,
             max=res_max,
             coord=coord,
-            cbar=True,
+            cbar=False,
         )
+        _add_cbar(plt.gca(), loc=sym)
 
     fig.subplots_adjust(hspace=0.05, wspace=0.05)
     return fig
