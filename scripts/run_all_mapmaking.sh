@@ -10,9 +10,8 @@ RUNS=(
     mars-nv-mono
     mars-nv-alma
     mars-nv-4beam
+    mist-sites
     all-sites
-    test-compare-old
-    mars-nv-multifreq
 )
 
 DONEFILE="scripts/.mapmaking_done"
