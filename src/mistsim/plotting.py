@@ -344,12 +344,22 @@ def plot_comparison_grid(
     plot_galactic=False,
     frac_range=1.0,
     ratio=True,
+    orientation="horizontal",
 ):
     """
     Grid comparing multiple recovered maps against the true map.
 
-    Top row: true map then each recovered map (shared colorscale).
-    Bottom row: empty then residual for each (shared colorscale).
+    Two layouts controlled by *orientation*:
+
+    ``"horizontal"`` (default)
+        Top row: true map then each recovered map (shared colorscale).
+        Bottom row: empty then residual for each (shared colorscale).
+        Each recovered column gets its label as a title.
+
+    ``"vertical"``
+        Top row: true map centred across both columns.
+        Subsequent rows: recovered map (left) and residual (right).
+        Each row is labelled with a ylabel on the recovered map.
 
     Parameters
     ----------
@@ -374,6 +384,8 @@ def plot_comparison_grid(
     ratio : bool
         If True, plot fractional residual (true - rec) / true.
         If False, plot absolute residual (true - rec).
+    orientation : str
+        ``"horizontal"`` or ``"vertical"``.
 
     Returns
     -------
@@ -410,13 +422,30 @@ def plot_comparison_grid(
 
     if ratio:
         res_raw = frac_range
-        res_prefix = "Frac. Resid."
+        res_prefix = "Fractional Residual"
     else:
         res_raw = max(np.max(np.abs(m)) for m in maps_res)
         res_prefix = "Residual"
     ticks = MaxNLocator(symmetric=True).tick_values(-res_raw, res_raw)
     res_max = ticks[-1]
 
+    if orientation == "vertical":
+        fig = _comparison_grid_vertical(
+            map_true, maps_rec, maps_res, labels,
+            plot_lmax, coord, vmin, vmax, res_max, res_prefix, n,
+        )
+    else:
+        fig = _comparison_grid_horizontal(
+            map_true, maps_rec, maps_res, labels,
+            plot_lmax, coord, vmin, vmax, res_max, res_prefix, n,
+        )
+    return fig
+
+
+def _comparison_grid_horizontal(
+    map_true, maps_rec, maps_res, labels,
+    plot_lmax, coord, vmin, vmax, res_max, res_prefix, n,
+):
     ncols = n + 1
     fig = plt.figure(figsize=(5 * ncols, 7))
 
@@ -460,7 +489,7 @@ def plot_comparison_grid(
         hp.mollview(
             mres,
             sub=(2, ncols, ncols + i + 2),
-            title=f"{res_prefix}: {lab}",
+            unit=res_prefix,
             cmap="coolwarm",
             min=-res_max,
             max=res_max,
@@ -470,6 +499,73 @@ def plot_comparison_grid(
         _add_cbar(plt.gca(), loc=sym)
 
     fig.subplots_adjust(hspace=0.05, wspace=0.05)
+    return fig
+
+
+def _comparison_grid_vertical(
+    map_true, maps_rec, maps_res, labels,
+    plot_lmax, coord, vmin, vmax, res_max, res_prefix, n,
+):
+    nrows = n + 1
+    fig = plt.figure(figsize=(10, 3.5 * nrows))
+
+    def _add_cbar(ax, loc=None):
+        im = ax.get_images()[0]
+        cb = fig.colorbar(
+            im, ax=ax, orientation="horizontal", shrink=0.6,
+        )
+        if loc is not None:
+            cb.locator = loc
+            cb.update_ticks()
+
+    # Row 0: true map centred (use left column, leave right blank)
+    hp.mollview(
+        map_true,
+        sub=(nrows, 2, 1),
+        title=f"True (l <= {plot_lmax})",
+        cmap="viridis",
+        min=vmin,
+        max=vmax,
+        coord=coord,
+        cbar=False,
+    )
+    _add_cbar(plt.gca())
+
+    # Rows 1..n: recovered (left) + residual (right)
+    sym = MaxNLocator(symmetric=True)
+    for i, (mr, mres, lab) in enumerate(
+        zip(maps_rec, maps_res, labels)
+    ):
+        row = i + 1
+        # Recovered map (left column)
+        hp.mollview(
+            mr,
+            sub=(nrows, 2, 2 * row + 1),
+            title=lab,
+            unit="Recovered",
+            cmap="viridis",
+            min=vmin,
+            max=vmax,
+            coord=coord,
+            cbar=False,
+        )
+        _add_cbar(plt.gca())
+
+        # Residual map (right column)
+        hp.mollview(
+            mres,
+            sub=(nrows, 2, 2 * row + 2),
+            title=lab,
+            unit=res_prefix,
+            cmap="coolwarm",
+            min=-res_max,
+            max=res_max,
+            coord=coord,
+            cbar=False,
+        )
+        _add_cbar(plt.gca(), loc=sym)
+
+    fig.subplots_adjust(hspace=0.3, wspace=0.05)
     return fig
 
 
