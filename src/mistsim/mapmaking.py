@@ -186,6 +186,81 @@ def alm1d_to_hp(alm):
     return jnp.concatenate((alm0, almc))
 
 
+def hp_to_alm1d(alm_hp):
+    """
+    Convert healpy complex alm to packed 1D vector (real/imag separated).
+
+    Inverse of :func:`alm1d_to_hp`.
+
+    Parameters
+    ----------
+    alm_hp : array-like
+        Complex alm in healpy ordering with shape
+        ``(hp.Alm.getsize(lmax),)``.
+
+    Returns
+    -------
+    alm : np.ndarray
+        Packed alm vector with shape ``((lmax+1)^2,)``. Layout is
+        ``[m=0 real, m>0 real, m>0 imag]``.
+
+    """
+    hp_len = len(alm_hp)
+    # hp_len = (lmax+1)*(lmax+2)/2 => lmax = (-3 + sqrt(9+8*(hp_len-1)))/2
+    lmax = int((-3 + np.sqrt(9 + 8 * (hp_len - 1))) / 2)
+    alm0 = np.real(np.asarray(alm_hp[: lmax + 1]))
+    almc = np.asarray(alm_hp[lmax + 1 :])
+    almre = np.sqrt(2) * np.real(almc)
+    almim = np.sqrt(2) * np.imag(almc)
+    return np.concatenate((alm0, almre, almim))
+
+
+def packed_lm_indices(lmax):
+    """
+    Return ``(ell, m)`` arrays mapping each index in the packed alm
+    vector to its spherical harmonic degree and order.
+
+    The layout follows :func:`_pack_single_freq`:
+
+    - ``[0 : lmax+1]`` — ``m = 0``, ``ell = 0 .. lmax``
+    - real block for ``m = 1 .. lmax`` (``lmax+1-m`` entries each)
+    - imag block for ``m = 1 .. lmax`` (same layout)
+
+    Parameters
+    ----------
+    lmax : int
+        Maximum spherical harmonic degree.
+
+    Returns
+    -------
+    ell_arr : np.ndarray
+        Spherical harmonic degree for each index, shape
+        ``((lmax+1)^2,)``.
+    m_arr : np.ndarray
+        Spherical harmonic order for each index, shape
+        ``((lmax+1)^2,)``.
+
+    """
+    nalm = (lmax + 1) ** 2
+    ell_arr = np.zeros(nalm, dtype=int)
+    m_arr = np.zeros(nalm, dtype=int)
+
+    # m=0 block
+    ell_arr[: lmax + 1] = np.arange(lmax + 1)
+    # m_arr already 0
+
+    # m>0 real block, then imag block (same l,m mapping)
+    offset = lmax + 1
+    for _pass in range(2):  # real then imag
+        for m in range(1, lmax + 1):
+            n_ell = lmax + 1 - m
+            ell_arr[offset : offset + n_ell] = np.arange(m, lmax + 1)
+            m_arr[offset : offset + n_ell] = m
+            offset += n_ell
+
+    return ell_arr, m_arr
+
+
 def stack_As(*A_list):
     """
     Vertically stack an arbitrary number of LinearOperators.
