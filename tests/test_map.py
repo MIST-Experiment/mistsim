@@ -158,6 +158,57 @@ def test_adjoint(sim):
     )
 
 
+@pytest.mark.parametrize("lmax", [4, 16, 32])
+def test_hp_to_alm1d_roundtrip(lmax):
+    """hp_to_alm1d inverts alm1d_to_hp."""
+    nalm = (lmax + 1) ** 2
+    rng = np.random.default_rng(42)
+    x_orig = rng.standard_normal(nalm)
+
+    alm_hp = np.asarray(ms.mapmaking.alm1d_to_hp(x_orig))
+    x_back = ms.mapmaking.hp_to_alm1d(alm_hp)
+    np.testing.assert_allclose(x_back, x_orig, rtol=1e-12)
+
+
+def test_packed_lm_indices_size():
+    """packed_lm_indices returns correct size and range."""
+    lmax = 10
+    ell_arr, m_arr = ms.mapmaking.packed_lm_indices(lmax)
+
+    assert len(ell_arr) == (lmax + 1) ** 2
+    assert len(m_arr) == (lmax + 1) ** 2
+    assert ell_arr.min() == 0
+    assert ell_arr.max() == lmax
+    assert m_arr.min() == 0
+    assert m_arr.max() == lmax
+
+
+def test_packed_lm_indices_m0_block():
+    """First lmax+1 entries are the m=0 block."""
+    lmax = 5
+    ell_arr, m_arr = ms.mapmaking.packed_lm_indices(lmax)
+
+    np.testing.assert_array_equal(m_arr[: lmax + 1], 0)
+    np.testing.assert_array_equal(
+        ell_arr[: lmax + 1], np.arange(lmax + 1)
+    )
+
+
+def test_packed_lm_indices_counts():
+    """Each (l, m>0) pair appears twice (real + imag)."""
+    lmax = 8
+    ell_arr, m_arr = ms.mapmaking.packed_lm_indices(lmax)
+
+    for m in range(1, lmax + 1):
+        mask = m_arr == m
+        # Should have 2*(lmax+1-m) entries (real + imag)
+        assert mask.sum() == 2 * (lmax + 1 - m)
+        ells_for_m = ell_arr[mask]
+        # Each ell from m..lmax appears exactly twice
+        for ell in range(m, lmax + 1):
+            assert np.sum(ells_for_m == ell) == 2
+
+
 def test_stack_As_adjoint():
     """stack_As adjoint consistency with 1D and 2D inputs."""
     rng = np.random.default_rng(42)
