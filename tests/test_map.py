@@ -189,9 +189,7 @@ def test_packed_lm_indices_m0_block():
     ell_arr, m_arr = ms.mapmaking.packed_lm_indices(lmax)
 
     np.testing.assert_array_equal(m_arr[: lmax + 1], 0)
-    np.testing.assert_array_equal(
-        ell_arr[: lmax + 1], np.arange(lmax + 1)
-    )
+    np.testing.assert_array_equal(ell_arr[: lmax + 1], np.arange(lmax + 1))
 
 
 def test_packed_lm_indices_counts():
@@ -498,3 +496,50 @@ def test_forward_single_freq(sim):
         np.asarray(y_ref_2d.real),
         rtol=1e-10,
     )
+
+
+# ------------------------------------------------------------------
+# select_nvec tests
+# ------------------------------------------------------------------
+
+
+class TestSelectNvec:
+    def test_threshold_basic(self):
+        Sigma = np.array([10.0, 5.0, 1.0, 0.1, 1e-12])
+        assert (
+            pipeline.select_nvec(Sigma, method="threshold", threshold=0.05)
+            == 4
+        )
+
+    def test_threshold_all_above(self):
+        Sigma = np.array([10.0, 5.0, 1.0])
+        nv = pipeline.select_nvec(Sigma, method="threshold", threshold=0.5)
+        assert nv == 3  # all above → warns nvec == k
+
+    def test_manual(self):
+        Sigma = np.array([10.0, 5.0, 1e-3, 1e-6])
+        assert pipeline.select_nvec(Sigma, method="manual", nvec=2) == 2
+
+    def test_manual_clamps(self):
+        Sigma = np.array([10.0, 5.0])
+        nv = pipeline.select_nvec(Sigma, method="manual", nvec=100)
+        assert nv == 2
+
+    def test_auto_finds_elbow(self):
+        # Signal modes decay fast, then noise floor
+        signal = np.logspace(2, -1, 20)
+        noise = np.full(30, 1e-5)
+        Sigma = np.concatenate([signal, noise])
+        nv = pipeline.select_nvec(Sigma, method="auto")
+        # Elbow should be near the transition (~20)
+        assert 15 <= nv <= 25
+
+    def test_auto_monotone(self):
+        # Pure power law — elbow at maximum curvature
+        Sigma = np.logspace(3, -3, 50)
+        nv = pipeline.select_nvec(Sigma, method="auto")
+        assert 1 <= nv <= 50
+
+    def test_unknown_method_raises(self):
+        with pytest.raises(ValueError, match="Unknown"):
+            pipeline.select_nvec(np.array([1.0]), method="bogus")

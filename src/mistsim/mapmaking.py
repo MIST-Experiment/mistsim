@@ -6,79 +6,17 @@ import jax.numpy as jnp
 import numpy as np
 import scipy.sparse.linalg as sla
 
-
-def _unpack_single_freq(x_freq, lmax):
-    """
-    Map 1d-vector of alm in real/imag to s2fft 2d array of complex alm.
-    """
-    N_per_freq = (lmax + 1) ** 2
-    N_pos_m = (N_per_freq - (lmax + 1)) // 2
-
-    m0_real = x_freq[: lmax + 1]  # m=0 modes
-    pos_m_real = x_freq[lmax + 1 : lmax + 1 + N_pos_m]  # m>0 real parts
-    pos_m_imag = x_freq[lmax + 1 + N_pos_m :]  # m>0 imag parts
-
-    flm_s2fft = jnp.zeros((lmax + 1, 2 * lmax + 1), dtype=jnp.complex128)
-    flm_s2fft = flm_s2fft.at[:, lmax].set(m0_real + 0j)  # set m=0 modes
-
-    # complex m > 0 modes normalized by 1/root(2) to preserve variance
-    pos_m_complex = 1 / jnp.sqrt(2) * (pos_m_real + 1j * pos_m_imag)
-
-    current_idx = 0
-    for m in range(1, lmax + 1):
-        n_ell = lmax + 1 - m
-        m_slice = pos_m_complex[current_idx : current_idx + n_ell]
-        m_conj_slice = (-1) ** m * jnp.conj(m_slice)
-
-        flm_s2fft = flm_s2fft.at[m:, lmax + m].set(m_slice)
-        flm_s2fft = flm_s2fft.at[m:, lmax - m].set(m_conj_slice)
-
-        current_idx += n_ell
-
-    return flm_s2fft
-
-
-def unpack_real_to_s2fft(x_real, lmax, Nfreq=1):
-    """
-    Multi-frequency wapper around _unpack_single_freq to reshape the
-    input and map over frequencies.
-    """
-    N_per_freq = (lmax + 1) ** 2
-    # Reshape to (Nfreq, N_per_freq) so we can map over frequencies
-    x_reshaped = jnp.ravel(x_real).reshape(Nfreq, N_per_freq)
-
-    # vmap over the 0th axis (frequencies)
-    unpack_vmap = jax.vmap(_unpack_single_freq, in_axes=(0, None))
-    return unpack_vmap(x_reshaped, lmax)
-
-
-def _pack_single_freq(flm_freq, lmax):
-    """
-    Map s2fft 2d array of complex alm to 1d-vector of alm in real/imag
-    for a single frequency.
-    """
-    m0_real = jnp.real(flm_freq[:, lmax])  # m=0 modes are purely real
-
-    # complex m > 0 modes
-    pos_m_complex = []
-    for m in range(1, lmax + 1):
-        pos_m_complex.append(flm_freq[m:, lmax + m])
-
-    # multiply by root(2) to preserve variance when going back to real/imag
-    pos_m_complex = jnp.sqrt(2) * jnp.concatenate(pos_m_complex)
-
-    pack_alm = jnp.concatenate(
-        [m0_real, jnp.real(pos_m_complex), jnp.imag(pos_m_complex)]
-    )
-    return pack_alm
-
-
-def pack_s2fft_to_real(flm_s2fft):
-    Nfreq, L, _ = flm_s2fft.shape
-    lmax = L - 1
-    # vmap the packing over the frequency axis
-    pack_vmap = jax.vmap(_pack_single_freq, in_axes=(0, None))
-    return jnp.ravel(pack_vmap(flm_s2fft, lmax))
+# Re-export alm utilities so that ``mapmaking.alm1d_to_hp`` etc.
+# continue to work for existing callers.
+from .alm import (  # noqa: F401
+    _pack_single_freq,
+    _unpack_single_freq,
+    alm1d_to_hp,
+    hp_to_alm1d,
+    pack_s2fft_to_real,
+    packed_lm_indices,
+    unpack_real_to_s2fft,
+)
 
 
 def _forward_single_freq(x, beam_alm_f, phases):
@@ -156,109 +94,6 @@ def _forward(x, beam_alm, phases):
 def _adjoint(y, transpose):
     yjax = jnp.asarray(y).reshape(-1, 1).astype(jnp.complex128)
     return np.asarray(transpose(yjax)[0]).ravel()
-
-
-def alm1d_to_hp(alm):
-    """
-    Convert packed 1D alm vector (real/imag separated) to healpy
-    complex ordering.
-
-    Parameters
-    ----------
-    alm : array-like
-        Packed alm vector with shape ((lmax+1)^2,). Layout is
-        [m=0 real, m>0 real, m>0 imag].
-
-    Returns
-    -------
-    alm_hp : jax.Array
-        Complex alm in healpy ordering with shape
-        (hp.Alm.getsize(lmax),).
-
-    """
-    s = len(alm)
-    lmax = int(np.sqrt(s) - 1)
-    hp_len = (lmax + 1) * (lmax + 2) // 2
-    alm0 = alm[: lmax + 1]
-    almre = alm[lmax + 1 : hp_len]
-    almim = alm[hp_len:]
-    almc = 1 / jnp.sqrt(2) * (almre + 1j * almim)
-    return jnp.concatenate((alm0, almc))
-
-
-def hp_to_alm1d(alm_hp):
-    """
-    Convert healpy complex alm to packed 1D vector (real/imag separated).
-
-    Inverse of :func:`alm1d_to_hp`.
-
-    Parameters
-    ----------
-    alm_hp : array-like
-        Complex alm in healpy ordering with shape
-        ``(hp.Alm.getsize(lmax),)``.
-
-    Returns
-    -------
-    alm : np.ndarray
-        Packed alm vector with shape ``((lmax+1)^2,)``. Layout is
-        ``[m=0 real, m>0 real, m>0 imag]``.
-
-    """
-    hp_len = len(alm_hp)
-    # hp_len = (lmax+1)*(lmax+2)/2 => lmax = (-3 + sqrt(9+8*(hp_len-1)))/2
-    lmax = int((-3 + np.sqrt(9 + 8 * (hp_len - 1))) / 2)
-    alm0 = np.real(np.asarray(alm_hp[: lmax + 1]))
-    almc = np.asarray(alm_hp[lmax + 1 :])
-    almre = np.sqrt(2) * np.real(almc)
-    almim = np.sqrt(2) * np.imag(almc)
-    return np.concatenate((alm0, almre, almim))
-
-
-def packed_lm_indices(lmax):
-    """
-    Return ``(ell, m)`` arrays mapping each index in the packed alm
-    vector to its spherical harmonic degree and order.
-
-    The layout follows :func:`_pack_single_freq`:
-
-    - ``[0 : lmax+1]`` — ``m = 0``, ``ell = 0 .. lmax``
-    - real block for ``m = 1 .. lmax`` (``lmax+1-m`` entries each)
-    - imag block for ``m = 1 .. lmax`` (same layout)
-
-    Parameters
-    ----------
-    lmax : int
-        Maximum spherical harmonic degree.
-
-    Returns
-    -------
-    ell_arr : np.ndarray
-        Spherical harmonic degree for each index, shape
-        ``((lmax+1)^2,)``.
-    m_arr : np.ndarray
-        Spherical harmonic order for each index, shape
-        ``((lmax+1)^2,)``.
-
-    """
-    nalm = (lmax + 1) ** 2
-    ell_arr = np.zeros(nalm, dtype=int)
-    m_arr = np.zeros(nalm, dtype=int)
-
-    # m=0 block
-    ell_arr[: lmax + 1] = np.arange(lmax + 1)
-    # m_arr already 0
-
-    # m>0 real block, then imag block (same l,m mapping)
-    offset = lmax + 1
-    for _pass in range(2):  # real then imag
-        for m in range(1, lmax + 1):
-            n_ell = lmax + 1 - m
-            ell_arr[offset : offset + n_ell] = np.arange(m, lmax + 1)
-            m_arr[offset : offset + n_ell] = m
-            offset += n_ell
-
-    return ell_arr, m_arr
 
 
 def stack_As(*A_list):
@@ -347,7 +182,10 @@ def make_Amat(sim):
     rmatvec = partial(_adjoint, transpose=transpose_fn)
 
     A = sla.LinearOperator(
-        shape, matvec=matvec, rmatvec=rmatvec, dtype=np.float64
+        shape,
+        matvec=matvec,
+        rmatvec=rmatvec,
+        dtype=np.float64,
     )
     return A
 
@@ -611,12 +449,12 @@ def randomized_svd_jax(
     Omega = jax.random.normal(key, (k + p, nalm))
 
     # Y = Atilde @ Omega^T: apply forward to each row
-    Y = jax.lax.map(atilde_fwd, Omega).T  # (ndata, k+p)
+    Y = jax.vmap(atilde_fwd)(Omega).T  # (ndata, k+p)
 
     Q, _ = jnp.linalg.qr(Y)
 
     # B = Atilde^H @ Q: apply adjoint to each column
-    B = jax.lax.map(atilde_adj, Q.T).T  # (nalm, k+p)
+    B = jax.vmap(atilde_adj)(Q.T).T  # (nalm, k+p)
 
     # SVD of B^T: (k+p, nalm)
     U_B, Sigma_full, Vh_B = jnp.linalg.svd(B.T, full_matrices=False)

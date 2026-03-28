@@ -304,6 +304,64 @@ def build_beam(site_cfg, sim_freq, freqs, freq_ix):
     )
 
 
+def _build_multi_freq_beam(site_cfg, sim_freqs, freqs, freq_indices):
+    """Build a multi-frequency Beam from a site config.
+
+    Like :func:`build_beam` but creates a single Beam object
+    spanning all requested frequencies so the SHT and rotation
+    are vmapped in one call.
+
+    Parameters
+    ----------
+    site_cfg : dict
+    sim_freqs : array-like
+        Frequencies (MHz) for the selected channels.
+    freqs : array-like
+        Full frequency array.
+    freq_indices : list[int]
+
+    Returns
+    -------
+    beam : mistsim.Beam
+
+    """
+    beam_type = site_cfg.get("beam_type", "file")
+    nfreq = len(freq_indices)
+    if beam_type == "sin2":
+        L = 180
+        theta = np.linspace(0, np.pi, L + 1)
+        g = np.sin(theta) ** 2
+        g = np.repeat(g[:, None], 2 * L, axis=-1)
+        g_multi = np.broadcast_to(g[None], (nfreq,) + g.shape).copy()
+        return Beam(
+            g_multi,
+            sim_freqs,
+            sampling="mwss",
+            horizon=None,
+        )
+
+    d = np.load(site_cfg["beam_file"])
+    gain = d["gain"]
+    g = gain[np.array(freq_indices)]
+
+    horizon = None
+    if "horizon_max_theta" in site_cfg:
+        theta = d["theta"]
+        mask = theta <= site_cfg["horizon_max_theta"]
+        horizon = mask[:, None]
+
+    az_rot = site_cfg.get("beam_az_rot", 0.0)
+    tilt = site_cfg.get("beam_tilt", 0.0)
+    return Beam(
+        g,
+        sim_freqs,
+        sampling="mwss",
+        horizon=horizon,
+        beam_az_rot=az_rot,
+        beam_tilt=tilt,
+    )
+
+
 # ------------------------------------------------------------------
 # A-matrix
 # ------------------------------------------------------------------
@@ -450,16 +508,149 @@ def run_svd(Atilde, k):
     return U[:, ix], Sigma[ix], Vh[ix]
 
 
-def select_nvec(Sigma, threshold=1e-10):
-    """
-    Select number of modes to keep above a threshold.
+def select_nvec(Sigma, method="threshold", **kwargs):
+    """Select the number of SVD modes to keep.
+
+    Three selection methods are available:
+
+    ``"threshold"``
+        Keep all modes with singular value above *threshold*
+        (default ``1e-10``).  This is the safest default — it
+        retains every mode that carries measurable signal.
+
+    ``"manual"``
+        Use a fixed *nvec* provided by the caller.  A warning is
+        emitted if the mode at the cut still has a Wiener filter
+        factor D > 0.01 (i.e. it contributes > 1 % of its
+        amplitude), which indicates significant information is
+        being discarded.
+
+    ``"auto"``
+        Detect the elbow (knee) of the singular-value curve in
+        log space.  The elbow is the point of maximum distance
+        from the line connecting the first and last computed
+        singular values.  No tuning parameters needed.
+
+    In all cases a warning is logged when the selected *nvec*
+    equals the total number of computed singular values *k*,
+    since this means the spectrum may not have been fully
+    captured and *n_singular_values* should be increased.
+
+    Parameters
+    ----------
+    Sigma : array-like
+        Singular values in descending order, shape ``(k,)``.
+    method : ``{"threshold", "manual", "auto"}``
+        Selection strategy.
+    **kwargs
+        Extra arguments forwarded to the chosen method:
+
+        - *threshold* : ``float`` — cutoff for ``"threshold"``
+          (default ``1e-10``).
+        - *nvec* : ``int`` — fixed count for ``"manual"``.
 
     Returns
     -------
     nvec : int
 
     """
-    return int(np.sum(Sigma > threshold))
+    Sigma = np.asarray(Sigma)
+    k = len(Sigma)
+
+    if method == "threshold":
+        threshold = kwargs.get("threshold", 1e-10)
+        nvec = int(np.sum(Sigma > threshold))
+
+    elif method == "manual":
+        nvec = int(kwargs["nvec"])
+        if nvec > k:
+            logger.warning(
+                "Requested nvec=%d but only k=%d singular "
+                "values were computed; clamping to k.",
+                nvec,
+                k,
+            )
+            nvec = k
+        # Warn if the cut discards well-measured modes
+        if nvec < k:
+            sigma_cut = Sigma[nvec]
+            D_cut = sigma_cut / (1 + sigma_cut**2)
+            if D_cut > 0.01:
+                logger.warning(
+                    "Manual nvec=%d drops mode with "
+                    "sigma=%.2e (filter factor D=%.3f). "
+                    "Consider increasing nvec.",
+                    nvec,
+                    sigma_cut,
+                    D_cut,
+                )
+
+    elif method == "auto":
+        nvec = _find_elbow(Sigma)
+
+    else:
+        raise ValueError(
+            f"Unknown nvec method {method!r}. "
+            "Use 'threshold', 'manual', or 'auto'."
+        )
+
+    # Global guard: all computed SVs exceeded the cut
+    if nvec == k and k > 0:
+        logger.warning(
+            "nvec == k (%d): all computed singular values "
+            "are retained. The smallest is %.2e. "
+            "Increase n_singular_values to ensure the full "
+            "spectrum is captured.",
+            k,
+            Sigma[-1],
+        )
+
+    return nvec
+
+
+def _find_elbow(Sigma):
+    """Detect the elbow of a singular-value curve.
+
+    Uses the maximum-distance-from-chord method in log space:
+    the elbow is the index farthest from the straight line
+    connecting the first and last points of log(Sigma).
+
+    Returns 0 if *Sigma* has fewer than 3 elements.
+    """
+    Sigma = np.asarray(Sigma, dtype=np.float64)
+    n = len(Sigma)
+    if n < 3:
+        return n
+
+    # Work in log space (clip to avoid log(0))
+    log_s = np.log(np.maximum(Sigma, 1e-300))
+
+    # Chord from first to last point
+    x = np.arange(n, dtype=np.float64)
+    dx = float(n - 1)
+    dy = log_s[-1] - log_s[0]
+    chord_len = np.sqrt(dx**2 + dy**2)
+
+    # Perpendicular distance of each point to the chord
+    # Using cross-product formula: |n x (p - p0)| / |n|
+    dist = np.abs(dy * x - dx * (log_s - log_s[0])) / chord_len
+
+    # Elbow is the point of maximum distance
+    elbow = int(np.argmax(dist))
+
+    # Return elbow + 1 since we want to *keep* that mode
+    return elbow + 1
+
+
+def _select_nvec_from_config(Sigma, svd_cfg):
+    """Read nvec selection settings from config and dispatch."""
+    method = svd_cfg.get("nvec_method", "threshold")
+    kwargs = {}
+    if method == "threshold":
+        kwargs["threshold"] = svd_cfg.get("threshold", 1e-10)
+    elif method == "manual":
+        kwargs["nvec"] = svd_cfg["nvec"]
+    return select_nvec(Sigma, method=method, **kwargs)
 
 
 def wiener_filter(
@@ -627,14 +818,19 @@ def posterior_uncertainty(
 def _prepare_freq_data(config, times, freqs):
     """Build per-frequency arrays for the ``lax.map`` solve.
 
+    Batches sky SHT and beam rotations across all frequencies
+    to avoid per-frequency compilation overhead.
+
     Returns numpy/jax arrays stacked over frequencies,
     plus per-site phases (shared across freqs).
     """
     freq_indices = _resolve_freq_indices(config)
+    nfreq = len(freq_indices)
     obs_cfg = config["observation"]
     lmax = obs_cfg["lmax"]
     sky_cfg = config["sky"]
     freqs_arr = np.arange(*sky_cfg["freq_range"])
+    sim_freqs_arr = freqs_arr[np.array(freq_indices)]
     post_cfg = config.get("posterior", {})
     noise_seed = post_cfg.get("seed", 1420)
     df = (freqs[1] - freqs[0]) * 1e6
@@ -653,60 +849,89 @@ def _prepare_freq_data(config, times, freqs):
         haslam_onefreq, freqs_arr, beta=beta, f0=f0_haslam
     )
 
-    beam_alms_list = []
-    y_list, Ndiag_list, noise_list = [], [], []
-    Sdiag_list, x_packed_list, x_hp_list = [], [], []
+    # --- Sky: single multi-freq SHT ---
+    sampling = sky_cfg.get("sampling", "mwss")
+    sky_maps = haslam_scaled[np.array(freq_indices)]
+    sky = Sky(
+        sky_maps,
+        sim_freqs_arr,
+        sampling=sampling,
+        coord="galactic",
+    )
+    sky_alm = sky.compute_alm_eq(world="earth")
+    sky_alm = cro.utils.reduce_lmax(sky_alm, lmax)
+
+    nalm = (lmax + 1) ** 2
+    x_packed_flat = np.asarray(mapmaking.pack_s2fft_to_real(sky_alm))
+    x_packed_all = x_packed_flat.reshape(nfreq, nalm)
+    x_hp_list = [
+        np.asarray(mapmaking.alm1d_to_hp(x_packed_all[i]))
+        for i in range(nfreq)
+    ]
+    logger.info("Sky SHT done for %d frequencies", nfreq)
+
+    # --- Beams: one multi-freq beam per site ---
+    # beam_alms_per_site[s] has shape (nfreq, L, 2L-1)
+    beam_alms_per_site = []
     phases_per_site = []
-    sim_freqs = []
-
-    for i, fi in enumerate(freq_indices):
-        sky_f, xp_f, xhp_f, _, sf = setup_sky(
-            config, freq_ix=fi, haslam_scaled=haslam_scaled
+    for s, site in enumerate(config["sites"]):
+        beam = _build_multi_freq_beam(
+            site, sim_freqs_arr, freqs_arr, freq_indices
         )
-        x_packed_list.append(xp_f)
-        x_hp_list.append(xhp_f)
-        sim_freqs.append(sf)
+        sim = Simulator(
+            beam,
+            sky,
+            times.jd,
+            sim_freqs_arr,
+            site["lon"],
+            site["lat"],
+            alt=site.get("alt", 0),
+            lmax=lmax,
+        )
+        ba = sim.compute_beam_eq()
+        ba = cro.utils.reduce_lmax(ba, lmax)
+        beam_alms_per_site.append(ba)
+        phases_per_site.append(sim.phases)
+        logger.info(
+            "Beam SHT done for site %s (%d freqs)",
+            site["name"],
+            nfreq,
+        )
 
-        # Per-site beam + phases
-        beams_f = []
+    # --- Forward model, noise, prior per frequency ---
+    y_list, Ndiag_list, noise_list, Sdiag_list = (
+        [],
+        [],
+        [],
+        [],
+    )
+    # beam_alms output: (nfreq, nsites, L, 2L-1)
+    beam_alms_list = []
+    for i in range(nfreq):
+        beams_f = [ba[i] for ba in beam_alms_per_site]
+        beam_alms_list.append(jnp.stack(beams_f))
+
         y_parts = []
-        for s, site in enumerate(config["sites"]):
-            beam = build_beam(site, sf, freqs_arr, fi)
-            sim = Simulator(
-                beam,
-                sky_f,
-                times.jd,
-                np.array([sf]),
-                site["lon"],
-                site["lat"],
-                alt=site.get("alt", 0),
-                lmax=lmax,
-            )
-            ba = sim.compute_beam_eq()
-            ba = cro.utils.reduce_lmax(ba, lmax)
-            beams_f.append(ba[0])  # squeeze freq dim
-            if i == 0:
-                phases_per_site.append(sim.phases)
+        for s in range(len(config["sites"])):
             y_s = mapmaking._forward_single_freq(
-                jnp.asarray(xp_f),
-                ba[0],
+                jnp.asarray(x_packed_all[i]),
+                beam_alms_per_site[s][i],
                 phases_per_site[s],
             )
             y_parts.append(np.asarray(y_s))
 
-        beam_alms_list.append(jnp.stack(beams_f))
         y_f = np.concatenate(y_parts)
         y_list.append(y_f)
         Nd_f, n_f = compute_noise(y_f, df, dt, seed=noise_seed + i)
         Ndiag_list.append(Nd_f)
         noise_list.append(n_f)
-        Sdiag_list.append(compute_prior(xp_f, lmax))
+        Sdiag_list.append(compute_prior(x_packed_all[i], lmax))
 
         logger.info(
             "Prepared freq %d/%d (%.0f MHz)",
             i + 1,
-            len(freq_indices),
-            sf,
+            nfreq,
+            sim_freqs_arr[i],
         )
 
     return {
@@ -716,9 +941,9 @@ def _prepare_freq_data(config, times, freqs):
         "Ndiag": jnp.asarray(np.stack(Ndiag_list)),
         "Sdiag": jnp.asarray(np.stack(Sdiag_list)),
         "noise": jnp.asarray(np.stack(noise_list)),
-        "x_packed": np.stack(x_packed_list),
+        "x_packed": x_packed_all,
         "x_hp": np.stack(x_hp_list),
-        "sim_freqs": np.array(sim_freqs),
+        "sim_freqs": sim_freqs_arr,
         "freq_indices": freq_indices,
     }
 
@@ -821,6 +1046,67 @@ def _build_atilde_for_freq(fdata, i):
     )
 
 
+def _rsvd_all_freqs(fdata, config):
+    """Randomized SVD for all frequencies via lax.map.
+
+    Compiles the rSVD graph once and applies it to each frequency,
+    avoiding per-frequency recompilation.
+
+    Parameters
+    ----------
+    fdata : dict
+        Output of :func:`_prepare_freq_data`.
+    config : dict
+
+    Returns
+    -------
+    Sigma_all : jax.Array, ``(nfreq, k)``
+    Vh_all : jax.Array, ``(nfreq, k, nalm)``
+
+    """
+    phases = fdata["phases"]
+    nsites = phases.shape[0]
+    nalm = fdata["Sdiag"].shape[1]
+    ndata = fdata["y"].shape[1]
+
+    svd_cfg = config.get("svd", {})
+    k = svd_cfg.get("n_singular_values", 800)
+    p_over = svd_cfg.get("oversampling", 10)
+
+    def _rsvd_one(args):
+        ba_f, Nd_f, Sd_f = args
+
+        def fwd(x):
+            outs = [
+                mapmaking._forward_single_freq(x, ba_f[s], phases[s])
+                for s in range(nsites)
+            ]
+            return jnp.concatenate(outs)
+
+        xd = jnp.zeros(nalm, dtype=jnp.float64)
+        _tr = jax.linear_transpose(fwd, xd)
+
+        def adj(y):
+            return _tr(y)[0]
+
+        at_fwd, at_adj = mapmaking.make_atilde_fns(Nd_f, fwd, adj, Sd_f)
+        _, Sigma, Vh = mapmaking.randomized_svd_jax(
+            at_fwd, at_adj, nalm, ndata, k, p=p_over
+        )
+        return Sigma, Vh
+
+    batch = (
+        fdata["beam_alms"],
+        fdata["Ndiag"],
+        fdata["Sdiag"],
+    )
+    logger.info(
+        "rSVD for %d frequencies via lax.map (first call compiles)",
+        fdata["beam_alms"].shape[0],
+    )
+    return jax.lax.map(_rsvd_one, batch)
+
+
 # ------------------------------------------------------------------
 # Top-level orchestrator
 # ------------------------------------------------------------------
@@ -901,13 +1187,8 @@ def _run_single_freq(config):
         k = svd_cfg.get("n_singular_values", 1200)
         U, Sigma, Vh = run_svd(Atilde, k=k)
 
-    threshold = svd_cfg.get("threshold", 1e-10)
-    nvec = select_nvec(Sigma, threshold=threshold)
-    logger.info(
-        "Selected nvec = %d (threshold = %e)",
-        nvec,
-        threshold,
-    )
+    nvec = _select_nvec_from_config(Sigma, svd_cfg)
+    logger.info("Selected nvec = %d", nvec)
 
     if solver != "cg":
         logger.info("Applying Wiener filter")
@@ -983,39 +1264,33 @@ def _run_multi_freq(config):
     # CG solve (lax.map — lightweight output)
     x_rec_all = np.asarray(_solve_all_freqs(fdata, config))
 
-    # rSVD + posterior (Python loop — one freq at a time
-    # to avoid OOM from stacking Vh across frequencies)
+    # rSVD (lax.map — single compilation for all frequencies)
+    Sigma_all, Vh_all = _rsvd_all_freqs(fdata, config)
+    Sigma_all = np.asarray(Sigma_all)
+    Vh_all = np.asarray(Vh_all)
+
+    # Posterior (Python loop — healpy cannot be JIT'd)
     svd_cfg = config.get("svd", {})
     post_cfg = config.get("posterior", {})
     noise_seed = post_cfg.get("seed", 1420)
-    threshold = svd_cfg.get("threshold", 1e-10)
-    k = svd_cfg.get("n_singular_values", 800)
-    p_over = svd_cfg.get("oversampling", 10)
     nside = 128
     n_real = post_cfg.get("n_realizations", 1000)
-    nalm = fdata["Sdiag"].shape[1]
-    ndata = fdata["y"].shape[1]
 
-    Sigma_list, nvec_list = [], []
+    nvec_list = []
     std_alm_list, std_map_list = [], []
     cl_prior_list, sigma2_prior_list = [], []
     best_map_list = []
 
     for i in range(nfreq):
         logger.info(
-            "rSVD + posterior freq %d/%d",
+            "Posterior freq %d/%d",
             i + 1,
             nfreq,
         )
-        at_fwd, at_adj = _build_atilde_for_freq(fdata, i)
-        _, Sig_i, Vh_i = mapmaking.randomized_svd_jax(
-            at_fwd, at_adj, nalm, ndata, k, p=p_over
-        )
-        Sig_i = np.asarray(Sig_i)
-        Vh_i = np.asarray(Vh_i)
-        Sigma_list.append(Sig_i)
+        Sig_i = Sigma_all[i]
+        Vh_i = Vh_all[i]
 
-        nv = select_nvec(Sig_i, threshold=threshold)
+        nv = _select_nvec_from_config(Sig_i, svd_cfg)
         nvec_list.append(nv)
 
         post = posterior_uncertainty(
@@ -1037,7 +1312,6 @@ def _run_multi_freq(config):
         fl[min(10, lmax) + 1 :] = 0.0
         bm = hp.alm2map(hp.almxfl(x_rec_all[i], fl), nside=nside)
         best_map_list.append(bm)
-        del Vh_i  # free ~200 MB per freq
 
     return {
         "run_name": run_name_from_config(config),
@@ -1050,7 +1324,7 @@ def _run_multi_freq(config):
         "std_map": np.stack(std_map_list),
         "cl_prior": np.stack(cl_prior_list),
         "sigma2_prior": np.array(sigma2_prior_list),
-        "Sigma": np.stack(Sigma_list),
+        "Sigma": Sigma_all,
         "nvec": np.array(nvec_list),
         "best_map": np.stack(best_map_list),
         "config": config,

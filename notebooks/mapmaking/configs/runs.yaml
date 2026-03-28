@@ -78,6 +78,22 @@ defaults:
     n_times: 500
     lmax: 179
 
+  svd:
+    # n_singular_values (k): how many singular values the rSVD
+    # *computes*. This is a computational budget, not how many
+    # you keep — that is controlled by nvec_method/threshold.
+    # Must be <= min(n_data, n_alm) where n_data = n_sites *
+    # n_times. Exceeding the operator rank wastes computation
+    # but does not cause errors.
+    n_singular_values: 800
+
+    # nvec_method: how to select which modes to keep.
+    #   "threshold" (default) — keep sigma > threshold
+    #   "manual"   — fixed nvec (set nvec: N)
+    #   "auto"     — elbow detection on log(sigma)
+    # nvec_method: threshold
+    # threshold: 1.0e-10
+
   posterior:
     n_realizations: 1000
     seed: 1420
@@ -88,47 +104,54 @@ defaults:
     generate_notebook: true
 
 runs:
-  mars-nv:
+  mars-dip-multifreq:  # 1 site: max rank = 500
+    beams: [mars-csa2022-dip]
+    sky:
+      freq_indices: all
+    svd:
+      n_singular_values: 500
+
+  mars-nv:  # 2 sites: max rank = 1000
     beams: [mars-csa2022-dip, nv-dip]
     svd:
-      n_singular_values: 800
+      n_singular_values: 1000
 
-  mars-nv-multifreq:
+  mars-nv-multifreq:  # 2 sites: max rank = 1000
     beams: [mars-csa2022-dip, nv-dip]
     sky:
       freq_indices: all
     svd:
-      n_singular_values: 800
+      n_singular_values: 1000
 
-  mars-nv-mono:
+  mars-nv-mono:  # 3 sites: max rank = 1500
     beams: [mars-csa2022-dip, nv-dip, nv-mono-analytic]
     svd:
-      n_singular_values: 1200
+      n_singular_values: 1500
 
-  mars-nv-alma:
+  mars-nv-alma:  # 3 sites: max rank = 1500
     beams: [mars-csa2022-dip, alma-csa2022-dip, nv-dip]
     svd:
-      n_singular_values: 1200
+      n_singular_values: 1500
 
-  mars-nv-4beam:  # north only
+  mars-nv-4beam:  # 4 sites: max rank = 2000
     beams:
       - mars-csa2022-dip
       - mars-mono-analytic
       - nv-dip
       - nv-mono-analytic
     svd:
-      n_singular_values: 1500
+      n_singular_values: 2000
 
-  south-4beam:  # south only
+  south-4beam:  # 4 sites: max rank = 2000
     beams:
       - alma-csa2022-dip
       - alma-mono-analytic
       - southpole-csa2022-dip
       - southpole-mono-analytic
     svd:
-      n_singular_values: 1500
+      n_singular_values: 2000
 
-  mist-sites:
+  mist-sites:  # 6 sites: max rank = 3000
     beams:
       - mars-csa2022-dip
       - mars-mono-analytic
@@ -137,9 +160,9 @@ runs:
       - alma-csa2022-dip
       - alma-mono-analytic
     svd:
-      n_singular_values: 1500
+      n_singular_values: 2000
 
-  all-sites:
+  all-sites:  # 8 sites: max rank = 4000
     beams:
       - mars-csa2022-dip
       - mars-mono-analytic
@@ -150,4 +173,4 @@ runs:
       - southpole-csa2022-dip
       - southpole-mono-analytic
     svd:
-      n_singular_values: 1500
+      n_singular_values: 2000
