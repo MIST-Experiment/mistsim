@@ -1519,6 +1519,34 @@ def _nb_cells_single(results, npz_path, cfg, sites):
             ")\nplt.show()"
         )
     )
+    cells.append(_make_md_cell("## Cumulative Residual RMS vs ell"))
+    cells.append(
+        _make_code_cell(
+            "cl_res = hp.alm2cl(x_rec - x_true)\n"
+            "ell = np.arange(len(cl_res))\n"
+            "weights = (2 * ell + 1) / (4 * np.pi)\n"
+            "rms_cum = np.sqrt(\n"
+            "    np.cumsum(weights * cl_res)\n"
+            ")\n"
+            "fig, ax = plt.subplots(\n"
+            "    figsize=(10, 5),\n"
+            "    constrained_layout=True,\n"
+            ")\n"
+            "ax.semilogy(ell[1:], rms_cum[1:])\n"
+            "ax.set_xlabel(r'$\\ell_{\\rm max}$',\n"
+            "    fontsize=14)\n"
+            "ax.set_ylabel(\n"
+            "    'Cumulative residual RMS [K]',\n"
+            "    fontsize=14,\n"
+            ")\n"
+            "ax.set_title(\n"
+            "    'RMS of (recovered - true) vs '\n"
+            "    'included modes',\n"
+            ")\n"
+            "ax.grid(alpha=0.3)\n"
+            "plt.show()"
+        )
+    )
     cells.append(_make_md_cell("## Posterior Uncertainty"))
     cells.append(
         _make_code_cell(
