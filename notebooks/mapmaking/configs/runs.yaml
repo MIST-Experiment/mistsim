@@ -19,6 +19,11 @@ sites:
     lon: 0.00000
     alt: 2800
 
+  torres:
+    lat: -50.00000
+    lon: -73.00000
+    alt: 0
+
 beams:
   mars-csa2022-dip:
     site: mars
@@ -64,6 +69,14 @@ beams:
     site: southpole
     beam_type: "sin2"
 
+  torres-csa2022-dip:
+    site: torres
+    beam_file: "../../data/20240806_for_lisa/csa2022_beam2.npz"
+
+  torres-mono-analytic:
+    site: torres
+    beam_type: "sin2"
+
 defaults:
   sky:
     haslam_file: "../../data/haslam_galactic_mwss.npz"
@@ -104,73 +117,78 @@ defaults:
     generate_notebook: true
 
 runs:
-  mars-dip-multifreq:  # 1 site: max rank = 500
-    beams: [mars-csa2022-dip]
-    sky:
-      freq_indices: all
-    svd:
-      n_singular_values: 500
+  # === Nominal comparison set (7 runs) ===
 
-  mars-nv:  # 2 sites: max rank = 1000
-    beams: [mars-csa2022-dip, nv-dip]
-    svd:
-      n_singular_values: 1000
+  mars:  # Group 1: 2 beams, max rank = 1000
+    run_name: mars
+    beams:
+      - mars-csa2022-dip
+      - mars-mono-analytic
 
-  mars-nv-multifreq:  # 2 sites: max rank = 1000
-    beams: [mars-csa2022-dip, nv-dip]
-    sky:
-      freq_indices: all
-    svd:
-      n_singular_values: 1000
-
-  mars-nv-mono:  # 3 sites: max rank = 1500
-    beams: [mars-csa2022-dip, nv-dip, nv-mono-analytic]
+  mars-nv:  # Groups 1+2: 4 beams, max rank = 2000
+    run_name: mars-nv
+    beams:
+      - mars-csa2022-dip
+      - mars-mono-analytic
+      - nv-dip
+      - nv-mono-analytic
     svd:
       n_singular_values: 1500
 
-  mars-nv-alma:  # 3 sites: max rank = 1500
-    beams: [mars-csa2022-dip, alma-csa2022-dip, nv-dip]
+  mars-lake:  # Groups 1+3: 3 beams, max rank = 1500
+    run_name: mars-lake
+    beams:
+      - mars-csa2022-dip
+      - mars-mono-analytic
+      - mars-lake-dip
+    svd:
+      n_singular_values: 1200
+
+  mars-nv-lake:  # Groups 1+2+3: 5 beams, max rank = 2500
+    run_name: mars-nv-lake
+    beams:
+      - mars-csa2022-dip
+      - mars-mono-analytic
+      - nv-dip
+      - nv-mono-analytic
+      - mars-lake-dip
+    svd:
+      n_singular_values: 2000
+
+  mars-nv-lake-alma:  # Groups 1+2+3+4: 7 beams, max rank = 3500
+    run_name: mars-nv-lake-alma
+    beams:
+      - mars-csa2022-dip
+      - mars-mono-analytic
+      - nv-dip
+      - nv-mono-analytic
+      - mars-lake-dip
+      - alma-csa2022-dip
+      - alma-mono-analytic
+    svd:
+      n_singular_values: 2500
+
+  all-nominal:  # Groups 1+2+3+4+5: 9 beams, max rank = 4500
+    run_name: all-nominal
+    beams:
+      - mars-csa2022-dip
+      - mars-mono-analytic
+      - nv-dip
+      - nv-mono-analytic
+      - mars-lake-dip
+      - alma-csa2022-dip
+      - alma-mono-analytic
+      - torres-csa2022-dip
+      - torres-mono-analytic
+    svd:
+      n_singular_values: 3000
+
+  alma-torres:  # Groups 4+5: 4 beams, max rank = 2000
+    run_name: alma-torres
+    beams:
+      - alma-csa2022-dip
+      - alma-mono-analytic
+      - torres-csa2022-dip
+      - torres-mono-analytic
     svd:
       n_singular_values: 1500
-
-  mars-nv-4beam:  # 4 sites: max rank = 2000
-    beams:
-      - mars-csa2022-dip
-      - mars-mono-analytic
-      - nv-dip
-      - nv-mono-analytic
-    svd:
-      n_singular_values: 2000
-
-  south-4beam:  # 4 sites: max rank = 2000
-    beams:
-      - alma-csa2022-dip
-      - alma-mono-analytic
-      - southpole-csa2022-dip
-      - southpole-mono-analytic
-    svd:
-      n_singular_values: 2000
-
-  mist-sites:  # 6 sites: max rank = 3000
-    beams:
-      - mars-csa2022-dip
-      - mars-mono-analytic
-      - nv-dip
-      - nv-mono-analytic
-      - alma-csa2022-dip
-      - alma-mono-analytic
-    svd:
-      n_singular_values: 2000
-
-  all-sites:  # 8 sites: max rank = 4000
-    beams:
-      - mars-csa2022-dip
-      - mars-mono-analytic
-      - nv-dip
-      - nv-mono-analytic
-      - alma-csa2022-dip
-      - alma-mono-analytic
-      - southpole-csa2022-dip
-      - southpole-mono-analytic
-    svd:
-      n_singular_values: 2000

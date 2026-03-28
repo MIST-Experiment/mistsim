@@ -6,12 +6,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 RUNS=(
+    mars
     mars-nv
-    mars-nv-mono
-    mars-nv-alma
-    mars-nv-4beam
-    mist-sites
-    all-sites
+    mars-lake
+    mars-nv-lake
+    mars-nv-lake-alma
+    all-nominal
+    alma-torres
 )
 
 DONEFILE="scripts/.mapmaking_done"
