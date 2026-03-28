@@ -89,7 +89,7 @@ defaults:
     start_time: "2026-02-25 12:27"
     n_sidereal_days: 1.0
     n_times: 500
-    lmax: 179
+    lmax: 90
 
   svd:
     # n_singular_values (k): how many singular values the rSVD
@@ -216,5 +216,13 @@ runs:
     beams: [mars-csa2022-dip, mars-mono-analytic]
     observation:
       lmax: 90
+    svd:
+      n_singular_values: 800
+
+  mars-lmax179:
+    run_name: mars-lmax179
+    beams: [mars-csa2022-dip, mars-mono-analytic]
+    observation:
+      lmax: 179
     svd:
       n_singular_values: 800
