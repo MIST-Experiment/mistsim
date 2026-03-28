@@ -181,7 +181,7 @@ runs:
       - torres-csa2022-dip
       - torres-mono-analytic
     svd:
-      n_singular_values: 1200
+      n_singular_values: 2000
 
   alma-torres:  # Groups 4+5: 4 beams, max rank = 2000
     run_name: alma-torres
