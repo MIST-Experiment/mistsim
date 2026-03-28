@@ -1547,6 +1547,39 @@ def _nb_cells_single(results, npz_path, cfg, sites):
             "plt.show()"
         )
     )
+    cells.append(_make_md_cell("## Fractional Residual Power vs ell"))
+    cells.append(
+        _make_code_cell(
+            "cl_true = hp.alm2cl(x_true)\n"
+            "cl_res = hp.alm2cl(x_rec - x_true)\n"
+            "frac = np.zeros_like(cl_true)\n"
+            "valid = cl_true > 0\n"
+            "frac[valid] = (\n"
+            "    cl_res[valid] / cl_true[valid]\n"
+            ")\n"
+            "ell = np.arange(len(frac))\n"
+            "fig, ax = plt.subplots(\n"
+            "    figsize=(10, 5),\n"
+            "    constrained_layout=True,\n"
+            ")\n"
+            "ax.semilogy(ell[1:], frac[1:])\n"
+            "ax.axhline(1, color='k', ls='--',\n"
+            "    alpha=0.5)\n"
+            "ax.set_xlabel(r'$\\ell$',\n"
+            "    fontsize=14)\n"
+            "ax.set_ylabel(\n"
+            "    r'$C_\\ell^{\\rm res}'\n"
+            "    r' / C_\\ell^{\\rm true}$',\n"
+            "    fontsize=14,\n"
+            ")\n"
+            "ax.set_title(\n"
+            "    'Fractional residual power '\n"
+            "    'per multipole',\n"
+            ")\n"
+            "ax.grid(alpha=0.3)\n"
+            "plt.show()"
+        )
+    )
     cells.append(_make_md_cell("## Posterior Uncertainty"))
     cells.append(
         _make_code_cell(
