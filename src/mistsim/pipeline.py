@@ -284,7 +284,16 @@ def build_beam(site_cfg, sim_freq, freqs, freq_ix):
 
     d = np.load(site_cfg["beam_file"])
     gain = d["gain"]
-    g = gain[freq_ix]
+    beam_freqs = d["freqs"]
+    # Map global freq to beam-local index
+    idx = np.where(np.isclose(beam_freqs, sim_freq))[0]
+    if len(idx) == 0:
+        raise ValueError(
+            f"Frequency {sim_freq} MHz not found in beam file "
+            f"{site_cfg['beam_file']} "
+            f"(range {beam_freqs[0]}-{beam_freqs[-1]} MHz)"
+        )
+    g = gain[idx[0]]
 
     horizon = None
     if "horizon_max_theta" in site_cfg:
@@ -342,7 +351,19 @@ def _build_multi_freq_beam(site_cfg, sim_freqs, freqs, freq_indices):
 
     d = np.load(site_cfg["beam_file"])
     gain = d["gain"]
-    g = gain[np.array(freq_indices)]
+    beam_freqs = d["freqs"]
+    # Map global freq_indices to beam-local indices
+    local_indices = []
+    for f in sim_freqs:
+        idx = np.where(np.isclose(beam_freqs, f))[0]
+        if len(idx) == 0:
+            raise ValueError(
+                f"Frequency {f} MHz not found in beam file "
+                f"{site_cfg['beam_file']} "
+                f"(range {beam_freqs[0]}-{beam_freqs[-1]} MHz)"
+            )
+        local_indices.append(idx[0])
+    g = gain[np.array(local_indices)]
 
     horizon = None
     if "horizon_max_theta" in site_cfg:
