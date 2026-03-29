@@ -193,6 +193,25 @@ runs:
     svd:
       n_singular_values: 1200
 
+  # === Multi-frequency: best config across the full band ===
+
+  all-nominal-multifreq:
+    run_name: all-nominal-multifreq
+    beams:
+      - mars-csa2022-dip
+      - mars-mono-analytic
+      - nv-dip
+      - nv-mono-analytic
+      - mars-lake-dip
+      - alma-csa2022-dip
+      - alma-mono-analytic
+      - torres-csa2022-dip
+      - torres-mono-analytic
+    svd:
+      n_singular_values: 2000
+    sky:
+      freq_indices: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
+
   # === lmax convergence test (MARS only) ===
 
   mars-lmax40:
