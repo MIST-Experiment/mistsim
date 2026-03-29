@@ -6,13 +6,20 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 RUNS=(
+    # 40 MHz nominal (7 runs, includes lake beam)
     mars
     mars-nv
     mars-lake
     mars-nv-lake
     mars-nv-lake-alma
-    all-nominal
     alma-torres
+    all-nominal
+    # 25 MHz nominal (5 runs, no lake beam)
+    mars-25
+    mars-nv-25
+    mars-nv-alma-25
+    alma-torres-25
+    all-nolake-25
 )
 
 DONEFILE="scripts/.mapmaking_done"

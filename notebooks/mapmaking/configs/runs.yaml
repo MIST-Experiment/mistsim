@@ -82,7 +82,7 @@ defaults:
     haslam_file: "../../data/haslam_galactic_mwss.npz"
     spectral_index: -2.55
     freq_range: [25, 126]
-    freq_index: 0  # single-freq; remove to run all freqs
+    freq_index: 15  # single-freq default: 40 MHz (index into 25-125 array)
     # freq_indices: all  # or list like [0, 25, 50, 75, 100]
 
   observation:
@@ -117,13 +117,16 @@ defaults:
     generate_notebook: true
 
 runs:
-  # === Nominal comparison set (7 runs) ===
+  # === Nominal comparison at 40 MHz (7 runs, includes lake beam) ===
 
   mars:  # Group 1: 2 beams, max rank = 1000
     run_name: mars
     beams:
       - mars-csa2022-dip
       - mars-mono-analytic
+    output:
+      results_dir: "../results/40mhz"
+      notebooks_dir: "../notebooks_out/40mhz"
 
   mars-nv:  # Groups 1+2: 4 beams, max rank = 2000
     run_name: mars-nv
@@ -134,6 +137,9 @@ runs:
       - nv-mono-analytic
     svd:
       n_singular_values: 1200
+    output:
+      results_dir: "../results/40mhz"
+      notebooks_dir: "../notebooks_out/40mhz"
 
   mars-lake:  # Groups 1+3: 3 beams, max rank = 1500
     run_name: mars-lake
@@ -143,6 +149,9 @@ runs:
       - mars-lake-dip
     svd:
       n_singular_values: 1200
+    output:
+      results_dir: "../results/40mhz"
+      notebooks_dir: "../notebooks_out/40mhz"
 
   mars-nv-lake:  # Groups 1+2+3: 5 beams, max rank = 2500
     run_name: mars-nv-lake
@@ -154,6 +163,9 @@ runs:
       - mars-lake-dip
     svd:
       n_singular_values: 1200
+    output:
+      results_dir: "../results/40mhz"
+      notebooks_dir: "../notebooks_out/40mhz"
 
   mars-nv-lake-alma:  # Groups 1+2+3+4: 7 beams, max rank = 3500
     run_name: mars-nv-lake-alma
@@ -167,6 +179,22 @@ runs:
       - alma-mono-analytic
     svd:
       n_singular_values: 1200
+    output:
+      results_dir: "../results/40mhz"
+      notebooks_dir: "../notebooks_out/40mhz"
+  
+  alma-torres:  # Groups 4+5: 4 beams, max rank = 2000
+    run_name: alma-torres
+    beams:
+      - alma-csa2022-dip
+      - alma-mono-analytic
+      - torres-csa2022-dip
+      - torres-mono-analytic
+    svd:
+      n_singular_values: 1200
+    output:
+      results_dir: "../results/40mhz"
+      notebooks_dir: "../notebooks_out/40mhz"
 
   all-nominal:  # Groups 1+2+3+4+5: 9 beams, max rank = 4500
     run_name: all-nominal
@@ -182,8 +210,56 @@ runs:
       - torres-mono-analytic
     svd:
       n_singular_values: 2000
+    output:
+      results_dir: "../results/40mhz"
+      notebooks_dir: "../notebooks_out/40mhz"
 
-  alma-torres:  # Groups 4+5: 4 beams, max rank = 2000
+  # === Nominal comparison at 25 MHz (5 runs, no lake beam) ===
+
+  mars-25:
+    run_name: mars
+    beams:
+      - mars-csa2022-dip
+      - mars-mono-analytic
+    sky:
+      freq_index: 0
+    output:
+      results_dir: "../results/25mhz"
+      notebooks_dir: "../notebooks_out/25mhz"
+
+  mars-nv-25:
+    run_name: mars-nv
+    beams:
+      - mars-csa2022-dip
+      - mars-mono-analytic
+      - nv-dip
+      - nv-mono-analytic
+    svd:
+      n_singular_values: 1200
+    sky:
+      freq_index: 0
+    output:
+      results_dir: "../results/25mhz"
+      notebooks_dir: "../notebooks_out/25mhz"
+
+  mars-nv-alma-25:
+    run_name: mars-nv-alma
+    beams:
+      - mars-csa2022-dip
+      - mars-mono-analytic
+      - nv-dip
+      - nv-mono-analytic
+      - alma-csa2022-dip
+      - alma-mono-analytic
+    svd:
+      n_singular_values: 1200
+    sky:
+      freq_index: 0
+    output:
+      results_dir: "../results/25mhz"
+      notebooks_dir: "../notebooks_out/25mhz"
+
+  alma-torres-25:
     run_name: alma-torres
     beams:
       - alma-csa2022-dip
@@ -192,11 +268,52 @@ runs:
       - torres-mono-analytic
     svd:
       n_singular_values: 1200
+    sky:
+      freq_index: 0
+    output:
+      results_dir: "../results/25mhz"
+      notebooks_dir: "../notebooks_out/25mhz"
+
+  all-nolake-25:
+    run_name: all-nolake
+    beams:
+      - mars-csa2022-dip
+      - mars-mono-analytic
+      - nv-dip
+      - nv-mono-analytic
+      - alma-csa2022-dip
+      - alma-mono-analytic
+      - torres-csa2022-dip
+      - torres-mono-analytic
+    svd:
+      n_singular_values: 2000
+    sky:
+      freq_index: 0
+    output:
+      results_dir: "../results/25mhz"
+      notebooks_dir: "../notebooks_out/25mhz"
 
   # === Multi-frequency: best config across the full band ===
 
   all-nominal-multifreq:
     run_name: all-nominal-multifreq
+    beams:
+      - mars-csa2022-dip
+      - mars-mono-analytic
+      - nv-dip
+      - nv-mono-analytic
+      - alma-csa2022-dip
+      - alma-mono-analytic
+      - torres-csa2022-dip
+      - torres-mono-analytic
+    svd:
+      n_singular_values: 2000
+    sky:
+      freq_indices: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
+
+  # With lake beam — restricted to 40-125 MHz (lake beam range)
+  all-nominal-multifreq-lake:
+    run_name: all-nominal-multifreq-lake
     beams:
       - mars-csa2022-dip
       - mars-mono-analytic
@@ -210,7 +327,7 @@ runs:
     svd:
       n_singular_values: 2000
     sky:
-      freq_indices: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
+      freq_indices: [15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
 
   # === lmax convergence test (MARS only) ===
 
@@ -221,6 +338,8 @@ runs:
       lmax: 40
     svd:
       n_singular_values: 800
+    sky:
+      freq_index: 0
 
   mars-lmax60:
     run_name: mars-lmax60
@@ -229,6 +348,8 @@ runs:
       lmax: 60
     svd:
       n_singular_values: 800
+    sky:
+      freq_index: 0
 
   mars-lmax90:
     run_name: mars-lmax90
@@ -237,6 +358,8 @@ runs:
       lmax: 90
     svd:
       n_singular_values: 800
+    sky:
+      freq_index: 0
 
   mars-lmax179:
     run_name: mars-lmax179
@@ -245,3 +368,5 @@ runs:
       lmax: 179
     svd:
       n_singular_values: 800
+    sky:
+      freq_index: 0
