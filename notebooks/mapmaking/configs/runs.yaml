@@ -309,7 +309,7 @@ runs:
     svd:
       n_singular_values: 2000
     sky:
-      freq_indices: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
+      freq_indices: all  # 101 freqs, 25-125 MHz
 
   # With lake beam — restricted to 40-125 MHz (lake beam range)
   all-nominal-multifreq-lake:
@@ -327,7 +327,8 @@ runs:
     svd:
       n_singular_values: 2000
     sky:
-      freq_indices: [15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
+      freq_indices: all  # 86 freqs, 40-125 MHz (limited by lake beam)
+      freq_range: [40, 126]
 
   # === lmax convergence test (MARS only) ===
 
