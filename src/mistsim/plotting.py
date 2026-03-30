@@ -233,6 +233,7 @@ def plot_maps_and_residuals(
     nside=128,
     plot_galactic=False,
     ratio=False,
+    res_range=None,
 ):
     """
     Mollweide projections of true, recovered, and residual maps.
@@ -242,6 +243,9 @@ def plot_maps_and_residuals(
     ratio : bool
         If True, plot fractional residual (true - rec) / true instead
         of the absolute residual.
+    res_range : float or None
+        Symmetric colorbar range for the residual map. If None,
+        the range is determined automatically from the data.
 
     Returns
     -------
@@ -249,7 +253,10 @@ def plot_maps_and_residuals(
 
     """
     fl = np.ones(lmax + 1)
-    fl[plot_lmax + 1 :] = 0.0
+    if plot_lmax is not None:
+        fl[plot_lmax + 1 :] = 0.0
+    else:
+        plot_lmax = lmax
     x_true_low = hp.almxfl(x_true, fl)
     x_rec_low = hp.almxfl(x_rec, fl)
     map_true = hp.alm2map(x_true_low, nside=nside)
@@ -279,9 +286,14 @@ def plot_maps_and_residuals(
         min(map_true.min(), map_rec.min()),
         max(map_true.max(), map_rec.max()),
     )
-    res_raw = np.max(np.abs(map_res))
-    ticks = MaxNLocator(symmetric=True).tick_values(-res_raw, res_raw)
-    res_max = ticks[-1]
+    if res_range is not None:
+        res_max = res_range
+    else:
+        res_raw = np.max(np.abs(map_res))
+        ticks = MaxNLocator(symmetric=True).tick_values(
+            -res_raw, res_raw
+        )
+        res_max = ticks[-1]
 
     def _add_cbar(label="", loc=None):
         ax = plt.gca()
