@@ -1,6 +1,7 @@
 import healpy as hp
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import LogNorm
 from matplotlib.ticker import MaxNLocator
 
 
@@ -134,6 +135,279 @@ def plot_alm_comparison(x_true, x_rec, std_alm, lmax, lmax_plot=5):
     for t in l_transitions:
         ax1.axvline(t - 0.5, color="gray", linestyle=":", alpha=0.5)
         ax2.axvline(t - 0.5, color="gray", linestyle=":", alpha=0.5)
+
+    return fig
+
+
+def plot_pull_distribution(x_true, x_rec, std_alm, lmax):
+    """
+    Histogram of normalized residuals (pulls) for alm coefficients.
+
+    Pull = (rec - true) / std for each real and imaginary component.
+    Well-calibrated error bars produce pulls distributed as N(0, 1).
+
+    Parameters
+    ----------
+    x_true : array-like
+        True alm in healpy ordering.
+    x_rec : array-like
+        Recovered alm in healpy ordering.
+    std_alm : array-like
+        Complex error bars (real part = error on Re, imag = on Im).
+    lmax : int
+        Maximum ell of the alm arrays.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+
+    """
+    pulls_real = []
+    pulls_imag = []
+
+    for ell in range(lmax + 1):
+        for m in range(ell + 1):
+            idx = hp.Alm.getidx(lmax, ell, m)
+            err_re = std_alm[idx].real
+            if err_re > 0:
+                pulls_real.append(
+                    (x_rec[idx].real - x_true[idx].real) / err_re
+                )
+            if m > 0:
+                err_im = std_alm[idx].imag
+                if err_im > 0:
+                    pulls_imag.append(
+                        (x_rec[idx].imag - x_true[idx].imag) / err_im
+                    )
+
+    pulls_real = np.array(pulls_real)
+    pulls_imag = np.array(pulls_imag)
+    pulls_all = np.concatenate([pulls_real, pulls_imag])
+
+    z = np.linspace(-5, 5, 200)
+    gauss = np.exp(-0.5 * z**2) / np.sqrt(2 * np.pi)
+
+    fig, axes = plt.subplots(
+        1,
+        3,
+        figsize=(16, 5),
+        constrained_layout=True,
+    )
+
+    for ax, data, title in zip(
+        axes,
+        [pulls_real, pulls_imag, pulls_all],
+        ["Real part", "Imaginary part", "All"],
+    ):
+        ax.hist(
+            data,
+            bins="auto",
+            density=True,
+            alpha=0.7,
+            color="C0",
+            edgecolor="white",
+        )
+        ax.plot(z, gauss, "k-", lw=2, label=r"$\mathcal{N}(0,1)$")
+        ax.set_xlabel("Pull", fontsize=13)
+        ax.set_ylabel("Density", fontsize=13)
+        mu, sig = np.mean(data), np.std(data)
+        ax.set_title(
+            f"{title}\n"
+            rf"$\mu={mu:.2f}$, $\sigma={sig:.2f}$, "
+            f"$N={len(data)}$",
+            fontsize=12,
+        )
+        ax.legend(fontsize=11)
+        ax.grid(alpha=0.3)
+        ax.set_xlim(-5, 5)
+
+    return fig
+
+
+def plot_alm_error_heatmap(x_true, std_alm, lmax, lmax_plot=None):
+    """
+    2D heatmap of posterior error and SNR in (ell, m) space.
+
+    Left: posterior uncertainty |sigma_{ell m}| (log scale).
+    Right: per-mode SNR |a^true_{ell m}| / |sigma_{ell m}|.
+    The power spectrum C_ell averages over m — this plot
+    reveals any m-dependent structure in constraining power.
+
+    Parameters
+    ----------
+    x_true : array-like
+        True alm in healpy ordering.
+    std_alm : array-like
+        Complex error bars (real = error on Re, imag on Im).
+    lmax : int
+        Maximum ell of the alm arrays.
+    lmax_plot : int or None
+        Maximum ell to show (defaults to lmax).
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+
+    """
+    if lmax_plot is None:
+        lmax_plot = lmax
+
+    err = np.full((lmax_plot + 1, lmax_plot + 1), np.nan)
+    snr = np.full((lmax_plot + 1, lmax_plot + 1), np.nan)
+
+    for ell in range(lmax_plot + 1):
+        for m in range(ell + 1):
+            idx = hp.Alm.getidx(lmax, ell, m)
+            e = np.abs(std_alm[idx])
+            err[m, ell] = e
+            if e > 0:
+                snr[m, ell] = np.abs(x_true[idx]) / e
+
+    fig, (ax1, ax2) = plt.subplots(
+        1,
+        2,
+        figsize=(14, 6),
+        constrained_layout=True,
+    )
+
+    # --- posterior error ---
+    valid = err[np.isfinite(err) & (err > 0)]
+    im1 = ax1.imshow(
+        err,
+        origin="lower",
+        aspect="equal",
+        norm=LogNorm(vmin=valid.min(), vmax=valid.max()),
+        cmap="inferno",
+        extent=(
+            -0.5,
+            lmax_plot + 0.5,
+            -0.5,
+            lmax_plot + 0.5,
+        ),
+    )
+    fig.colorbar(
+        im1,
+        ax=ax1,
+        shrink=0.8,
+        label=r"$|\sigma_{\ell m}|$",
+    )
+    ax1.set_xlabel(r"$\ell$", fontsize=14)
+    ax1.set_ylabel(r"$m$", fontsize=14)
+    ax1.set_title("Posterior Error", fontsize=14)
+
+    # --- SNR ---
+    valid_s = snr[np.isfinite(snr) & (snr > 0)]
+    vmin_s = max(valid_s.min(), 1e-2)
+    im2 = ax2.imshow(
+        snr,
+        origin="lower",
+        aspect="equal",
+        norm=LogNorm(vmin=vmin_s, vmax=valid_s.max()),
+        cmap="viridis",
+        extent=(
+            -0.5,
+            lmax_plot + 0.5,
+            -0.5,
+            lmax_plot + 0.5,
+        ),
+    )
+    fig.colorbar(
+        im2,
+        ax=ax2,
+        shrink=0.8,
+        label="SNR",
+    )
+    # contour at SNR = 1
+    ell_arr = np.arange(lmax_plot + 1)
+    snr_filled = np.where(np.isfinite(snr), snr, 0)
+    ax2.contour(
+        ell_arr,
+        ell_arr,
+        snr_filled,
+        levels=[1.0],
+        colors="red",
+        linewidths=1.5,
+        linestyles="--",
+    )
+    ax2.set_xlabel(r"$\ell$", fontsize=14)
+    ax2.set_ylabel(r"$m$", fontsize=14)
+    ax2.set_title(
+        r"SNR $= |a_{\ell m}^{\rm true}|"
+        r" / |\sigma_{\ell m}|$",
+        fontsize=14,
+    )
+
+    return fig
+
+
+def plot_ell_freq_residual(
+    x_true, x_rec, lmax, freqs, lmax_plot=None, vmin=None, vmax=None,
+    ):
+    """
+    Heatmap of per-ell fractional residual power vs frequency.
+
+    Color encodes C_ell^res / C_ell^true at each (ell, freq).
+    Values below 1 indicate constrained modes; the black
+    contour at 1.0 marks the constraining frontier.
+
+    Parameters
+    ----------
+    x_true : array-like, shape (nf, nalm)
+        True alm at each frequency.
+    x_rec : array-like, shape (nf, nalm)
+        Recovered alm at each frequency.
+    lmax : int
+        Maximum ell.
+    freqs : array-like, shape (nf,)
+        Frequencies in MHz.
+    lmax_plot : int or None
+        Maximum ell to show (defaults to lmax).
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+
+    """
+    nf = len(freqs)
+    if lmax_plot is None:
+        lmax_plot = lmax
+
+    frac = np.full((nf, lmax_plot + 1), np.nan)
+    for fi in range(nf):
+        cl_t = hp.alm2cl(x_true[fi])[: lmax_plot + 1]
+        cl_r = hp.alm2cl(x_rec[fi] - x_true[fi])[: lmax_plot + 1]
+        ok = cl_t > 0
+        frac[fi, ok] = cl_r[ok] / cl_t[ok]
+
+    ell_arr = np.arange(lmax_plot + 1)
+
+    fig, ax = plt.subplots(
+        figsize=(10, 6),
+        constrained_layout=True,
+    )
+    im = ax.pcolormesh(
+        ell_arr,
+        freqs,
+        frac,
+        norm=LogNorm(vmin=vmin, vmax=vmax),
+        cmap="RdYlGn_r",
+        shading="nearest",
+    )
+    fig.colorbar(
+        im,
+        ax=ax,
+        label=(
+            r"$C_\ell^{\rm res}"
+            r" / C_\ell^{\rm true}$"
+        ),
+    )
+    ax.invert_yaxis()
+    ax.set_xlabel(r"$\ell$", fontsize=14)
+    ax.set_ylabel("Frequency [MHz]", fontsize=14)
+    ax.set_title(
+        r"Per-$\ell$ Fractional Residual Power",
+        fontsize=14,
+    )
 
     return fig
 
