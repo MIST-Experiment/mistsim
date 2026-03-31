@@ -10,6 +10,7 @@ import jax
 import jax.numpy as jnp
 import nbformat
 import numpy as np
+import s2fft
 import scipy.sparse.linalg as sla
 import yaml
 from astropy.time import Time
@@ -1403,6 +1404,106 @@ def save_results(results, path):
         d["multi_freq"] = True
     np.savez(path, **d)
     logger.info("Saved results to %s", path)
+
+
+def add_beam_maps(npz_path, freq, nside=None):
+    """Compute equatorial beam maps and add them to an npz file.
+
+    Loads the run config from the saved ``config_yaml``, builds
+    each beam at the requested frequency, rotates to equatorial
+    coordinates, and saves HEALPix maps back into the npz.
+
+    Parameters
+    ----------
+    npz_path : str or Path
+        Path to the results npz file.
+    freq : float
+        Frequency in MHz at which to evaluate the beams.
+    nside : int or None
+        HEALPix nside for the output beam maps.  Must satisfy
+        ``nside <= (lmax + 1) // 2``.  Default is the largest
+        power-of-2 nside that fits.
+
+    """
+    npz_path = Path(npz_path)
+    with np.load(npz_path, allow_pickle=True) as npz:
+        data = {k: npz[k] for k in npz.files}
+
+    config = yaml.safe_load(str(data["config_yaml"]))
+
+    obs_cfg = config["observation"]
+    lmax = obs_cfg["lmax"]
+    L = lmax + 1
+    if nside is None:
+        nside = 2 ** int(np.floor(np.log2(L // 2)))
+    if L < 2 * nside:
+        raise ValueError(
+            f"nside={nside} requires L >= {2 * nside} "
+            f"but lmax={lmax} gives L={L}"
+        )
+    fr = config["sky"]["freq_range"]
+    freqs_arr = np.arange(fr[0], fr[1])
+    freq_ix = int(np.where(np.isclose(freqs_arr, freq))[0][0])
+
+    # Minimal time array (only rotation matrices needed)
+    start_time = Time(obs_cfg["start_time"])
+    end_time = start_time + 1.0 * u.sday
+    times = cro.utils.time_array(
+        t_start=start_time,
+        t_end=end_time,
+        N_times=2,
+    )
+
+    # Dummy sky — compute_beam_eq only uses observer
+    # location, not the sky itself.
+    nside_dummy = 64
+    dummy_sky = Sky(
+        np.ones((1, hp.nside2npix(nside_dummy))),
+        freq,
+        sampling="healpix",
+        coord="equatorial",
+    )
+
+    beam_maps = []
+    beam_names = []
+    for site in config["sites"]:
+        logger.info(
+            "Computing beam map for %s at %.0f MHz",
+            site["name"],
+            freq,
+        )
+        beam = build_beam(site, freq, freqs_arr, freq_ix)
+        sim = Simulator(
+            beam,
+            dummy_sky,
+            times.jd,
+            np.array([freq]),
+            site["lon"],
+            site["lat"],
+            alt=site.get("alt", 0),
+            lmax=lmax,
+        )
+        beam_alm = sim.compute_beam_eq()
+        beam_alm = cro.utils.reduce_lmax(beam_alm, lmax)
+        bmap = s2fft.inverse_numpy(
+            np.array(beam_alm[0]),
+            L=lmax + 1,
+            nside=nside,
+            sampling="healpix",
+        )
+        beam_maps.append(np.real(bmap))
+        beam_names.append(site["name"])
+
+    data["beam_maps"] = np.stack(beam_maps)
+    data["beam_names"] = np.array(beam_names)
+    data["beam_freq"] = np.float64(freq)
+    np.savez(npz_path, **data)
+    logger.info(
+        "Added %d beam maps at %.0f MHz to %s",
+        len(beam_maps),
+        freq,
+        npz_path,
+    )
 
 
 # ------------------------------------------------------------------

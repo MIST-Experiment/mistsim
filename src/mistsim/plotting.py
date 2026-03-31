@@ -290,9 +290,7 @@ def plot_maps_and_residuals(
         res_max = res_range
     else:
         res_raw = np.max(np.abs(map_res))
-        ticks = MaxNLocator(symmetric=True).tick_values(
-            -res_raw, res_raw
-        )
+        ticks = MaxNLocator(symmetric=True).tick_values(-res_raw, res_raw)
         res_max = ticks[-1]
 
     def _add_cbar(label="", loc=None):
@@ -443,20 +441,47 @@ def plot_comparison_grid(
 
     if orientation == "vertical":
         fig = _comparison_grid_vertical(
-            map_true, maps_rec, maps_res, labels,
-            plot_lmax, coord, vmin, vmax, res_max, res_prefix, n,
+            map_true,
+            maps_rec,
+            maps_res,
+            labels,
+            plot_lmax,
+            coord,
+            vmin,
+            vmax,
+            res_max,
+            res_prefix,
+            n,
         )
     else:
         fig = _comparison_grid_horizontal(
-            map_true, maps_rec, maps_res, labels,
-            plot_lmax, coord, vmin, vmax, res_max, res_prefix, n,
+            map_true,
+            maps_rec,
+            maps_res,
+            labels,
+            plot_lmax,
+            coord,
+            vmin,
+            vmax,
+            res_max,
+            res_prefix,
+            n,
         )
     return fig
 
 
 def _comparison_grid_horizontal(
-    map_true, maps_rec, maps_res, labels,
-    plot_lmax, coord, vmin, vmax, res_max, res_prefix, n,
+    map_true,
+    maps_rec,
+    maps_res,
+    labels,
+    plot_lmax,
+    coord,
+    vmin,
+    vmax,
+    res_max,
+    res_prefix,
+    n,
 ):
     ncols = n + 1
     fig = plt.figure(figsize=(5 * ncols, 7))
@@ -464,7 +489,10 @@ def _comparison_grid_horizontal(
     def _add_cbar(ax, loc=None):
         im = ax.get_images()[0]
         cb = fig.colorbar(
-            im, ax=ax, orientation="horizontal", shrink=0.6,
+            im,
+            ax=ax,
+            orientation="horizontal",
+            shrink=0.6,
         )
         if loc is not None:
             cb.locator = loc
@@ -515,8 +543,17 @@ def _comparison_grid_horizontal(
 
 
 def _comparison_grid_vertical(
-    map_true, maps_rec, maps_res, labels,
-    plot_lmax, coord, vmin, vmax, res_max, res_prefix, n,
+    map_true,
+    maps_rec,
+    maps_res,
+    labels,
+    plot_lmax,
+    coord,
+    vmin,
+    vmax,
+    res_max,
+    res_prefix,
+    n,
 ):
     nrows = n + 1
     fig = plt.figure(figsize=(10, 3.5 * nrows))
@@ -524,7 +561,10 @@ def _comparison_grid_vertical(
     def _add_cbar(ax, loc=None):
         im = ax.get_images()[0]
         cb = fig.colorbar(
-            im, ax=ax, orientation="horizontal", shrink=0.6,
+            im,
+            ax=ax,
+            orientation="horizontal",
+            shrink=0.6,
         )
         if loc is not None:
             cb.locator = loc
@@ -545,9 +585,7 @@ def _comparison_grid_vertical(
 
     # Rows 1..n: recovered (left) + residual (right)
     sym = MaxNLocator(symmetric=True)
-    for i, (mr, mres, lab) in enumerate(
-        zip(maps_rec, maps_res, labels)
-    ):
+    for i, (mr, mres, lab) in enumerate(zip(maps_rec, maps_res, labels)):
         row = i + 1
         # Recovered map (left column)
         hp.mollview(
@@ -667,4 +705,58 @@ def plot_posterior_maps(std_map, sigma2_prior, best_map, nside):
         title="SNR = |map| / std",
         cmap="magma",
     )
+    return fig
+
+
+def plot_beam_patterns(
+    beam_maps,
+    beam_names,
+    nrows,
+    ncols,
+    freq=None,
+    coord=None,
+):
+    """Plot beam patterns on a grid of Mollweide projections.
+
+    Parameters
+    ----------
+    beam_maps : array-like, shape (n_beams, npix)
+        HEALPix beam maps in equatorial coordinates.
+    beam_names : list of str
+        Label for each beam.
+    nrows, ncols : int
+        Grid layout.
+    freq : float or None
+        Frequency in MHz (used in the suptitle).
+    coord : list of str or None
+        Coordinate rotation for ``hp.projview``,
+        e.g. ``["C", "G"]`` for equatorial to galactic.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+
+    """
+    n = len(beam_maps)
+    fig = plt.figure(
+        figsize=(7 * ncols, 4.5 * nrows),
+    )
+    for i in range(n):
+        kw = {}
+        if coord is not None:
+            kw["coord"] = coord
+        hp.projview(
+            beam_maps[i],
+            title=beam_names[i],
+            projection_type="mollweide",
+            sub=(nrows, ncols, i + 1),
+            **kw,
+        )
+    if freq is not None:
+        fig.suptitle(
+            f"Beam Patterns at {freq:.0f} MHz",
+            fontsize=16,
+            y=1.01,
+        )
+    plt.tight_layout()
     return fig
