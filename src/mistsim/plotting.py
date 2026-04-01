@@ -758,7 +758,7 @@ def _comparison_grid_horizontal(
     n,
 ):
     ncols = n + 1
-    fig = plt.figure(figsize=(5 * ncols, 7))
+    fig = plt.figure(figsize=(5 * ncols, 8))
 
     def _add_cbar(ax, loc=None):
         im = ax.get_images()[0]
@@ -803,6 +803,7 @@ def _comparison_grid_horizontal(
         hp.mollview(
             mres,
             sub=(2, ncols, ncols + i + 2),
+            title="",
             unit=res_prefix,
             cmap="coolwarm",
             min=-res_max,
@@ -812,7 +813,7 @@ def _comparison_grid_horizontal(
         )
         _add_cbar(plt.gca(), loc=sym)
 
-    fig.subplots_adjust(hspace=0.05, wspace=0.05)
+    fig.subplots_adjust(hspace=0.3, wspace=0.05, top=0.92)
     return fig
 
 
