@@ -1,6 +1,7 @@
 # mist data files
 notebooks/data/*
 **.npz
+**.fits
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
