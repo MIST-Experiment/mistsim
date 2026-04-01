@@ -1,5 +1,6 @@
 """Pipeline orchestration for MIST mapmaking runs."""
 
+import copy
 import logging
 from pathlib import Path
 
@@ -707,6 +708,188 @@ def wiener_filter(
     x_rec = Sdiag**0.5 * x_tilde
     x_rec_hp = np.asarray(mapmaking.alm1d_to_hp(x_rec))
     return x_rec_hp, D
+
+
+# ------------------------------------------------------------------
+# Prior mismatch study helpers
+# ------------------------------------------------------------------
+
+
+def prior_mismatch_products(config, freq_index):
+    """Compute SVD products for a prior mismatch study.
+
+    Re-runs data preparation for a single frequency, then
+    computes the full rSVD (including *U*) and the projected
+    data vector ``c = U^T y_tilde``.
+
+    Parameters
+    ----------
+    config : dict
+        Full pipeline config (e.g. loaded from npz config_yaml).
+    freq_index : int
+        Index into the frequency array to analyse.
+
+    Returns
+    -------
+    dict
+        Keys: U, Sigma, Vh, c, y_tilde, Sdiag, Ndiag,
+        x_true_hp, lmax, nvec, fdata.
+
+    """
+    cfg = copy.deepcopy(config)
+    cfg["sky"]["freq_indices"] = [freq_index]
+
+    obs = cfg["observation"]
+    tstart = Time(obs["start_time"])
+    tend = tstart + obs["n_sidereal_days"] * u.sday
+    times = cro.utils.time_array(
+        t_start=tstart,
+        t_end=tend,
+        N_times=obs["n_times"],
+    )
+    fr = cfg["sky"]["freq_range"]
+    freqs = np.arange(fr[0], fr[1])
+
+    fdata = _prepare_freq_data(cfg, times, freqs)
+
+    atilde_fwd, atilde_adj = _build_atilde_for_freq(fdata, 0)
+
+    nalm = fdata["Sdiag"].shape[1]
+    ndata = fdata["y"].shape[1]
+    svd_cfg = cfg.get("svd", {})
+    k = svd_cfg.get("n_singular_values", 800)
+    p_over = svd_cfg.get("oversampling", 10)
+
+    logger.info(
+        "Running rSVD (k=%d, p=%d) for freq index %d",
+        k,
+        p_over,
+        freq_index,
+    )
+    U, Sigma, Vh = mapmaking.randomized_svd_jax(
+        atilde_fwd,
+        atilde_adj,
+        nalm,
+        ndata,
+        k,
+        p=p_over,
+    )
+    U = np.asarray(U)
+    Sigma = np.asarray(Sigma)
+    Vh = np.asarray(Vh)
+
+    Ndiag = np.asarray(fdata["Ndiag"][0])
+    Sdiag = np.asarray(fdata["Sdiag"][0])
+    y = np.asarray(fdata["y"][0])
+    noise = np.asarray(fdata["noise"][0])
+
+    y_tilde = Ndiag ** (-0.5) * (y + noise)
+    c = U[:, :k].T @ y_tilde
+
+    nvec = _select_nvec_from_config(Sigma, svd_cfg)
+    lmax = obs["lmax"]
+
+    return {
+        "U": U,
+        "Sigma": Sigma,
+        "Vh": Vh,
+        "c": c,
+        "y_tilde": y_tilde,
+        "Sdiag": Sdiag,
+        "Ndiag": Ndiag,
+        "x_true_hp": fdata["x_hp"][0],
+        "lmax": lmax,
+        "nvec": nvec,
+    }
+
+
+def wiener_filter_alpha(
+    Sigma,
+    Vh,
+    c,
+    Sdiag,
+    alpha,
+    nvec,
+    lmax,
+    nside=128,
+    n_realizations=1000,
+    seed=1420,
+):
+    """Reapply Wiener filter with prior scaled by *alpha*.
+
+    Uses pre-computed SVD products and projected data to avoid
+    re-running the expensive SVD.
+
+    Parameters
+    ----------
+    Sigma : array, shape (k,)
+        Singular values from rSVD with true prior.
+    Vh : array, shape (k, nalm)
+        Right singular vectors.
+    c : array, shape (k,)
+        Projected data ``U^T y_tilde``.
+    Sdiag : array, shape (nalm,)
+        True prior diagonal (will be scaled by *alpha*).
+    alpha : float
+        Prior scaling factor.
+    nvec : int
+        Number of modes to retain.
+    lmax : int
+        Maximum harmonic degree.
+    nside : int
+        HEALPix nside for posterior std map.
+    n_realizations : int
+        Monte Carlo realizations for posterior uncertainty.
+    seed : int
+        Random seed for MC realizations.
+
+    Returns
+    -------
+    dict
+        Keys: x_rec_hp, D_alpha, std_alm, std_map.
+
+    """
+    Sig_a = np.sqrt(alpha) * Sigma[:nvec]
+    D_alpha = Sig_a / (1 + Sig_a**2)
+
+    x_tilde = Vh[:nvec].T @ (D_alpha * c[:nvec])
+    x_rec = np.sqrt(alpha * Sdiag) * x_tilde
+    x_rec_hp = np.asarray(mapmaking.alm1d_to_hp(x_rec))
+
+    # Posterior uncertainty (adapted from posterior_uncertainty)
+    Vht = Vh[:nvec]
+    n_alm = Vh.shape[1]
+    rng = np.random.default_rng(seed=seed)
+    wfull = rng.normal(size=(n_alm, n_realizations))
+
+    post_std_svd = 1.0 / np.sqrt(Sig_a**2 + 1.0)
+    std_reduce = 1 - post_std_svd
+
+    corr = Vht.T @ (std_reduce[:, None] * (Vht @ wfull))
+    x_tilde_sim = wfull - corr
+
+    Sdiag_a = alpha * Sdiag
+    x_sim = np.sqrt(Sdiag_a)[:, None] * x_tilde_sim
+    x_sim_hp = np.array(
+        [
+            np.asarray(mapmaking.alm1d_to_hp(x_sim[:, i]))
+            for i in range(n_realizations)
+        ]
+    )
+
+    std_alm_re = np.std(x_sim_hp.real, axis=0)
+    std_alm_im = np.std(x_sim_hp.imag, axis=0)
+    std_alm = std_alm_re + 1j * std_alm_im
+
+    x_sim_map = np.array([hp.alm2map(xs, nside) for xs in x_sim_hp])
+    std_map = np.std(x_sim_map, axis=0)
+
+    return {
+        "x_rec_hp": x_rec_hp,
+        "D_alpha": D_alpha,
+        "std_alm": std_alm,
+        "std_map": std_map,
+    }
 
 
 def wiener_filter_cg(
