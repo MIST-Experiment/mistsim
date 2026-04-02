@@ -90,6 +90,7 @@ defaults:
     n_sidereal_days: 1.0
     n_times: 500
     lmax: 90
+    lmax_sim: 179  # forward model resolution (null = same as lmax)
 
   svd:
     # n_singular_values (k): how many singular values the rSVD
