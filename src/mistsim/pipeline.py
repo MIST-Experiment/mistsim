@@ -2004,8 +2004,10 @@ def load_and_concat_sim_data(paths, freq_range=None):
     beams = [load_sim_data(p) for p in paths]
     ref = beams[0]
 
-    # Determine target frequencies
+    # Determine target frequencies (intersection of all beams)
     target_freqs = ref["freqs"]
+    for b in beams[1:]:
+        target_freqs = np.intersect1d(target_freqs, b["freqs"])
     if freq_range is not None:
         mask = (target_freqs >= freq_range[0]) & (
             target_freqs < freq_range[1]

@@ -78,11 +78,25 @@ def main():
             "the beams listed in the run config."
         ),
     )
+    parser.add_argument(
+        "--freq-indices",
+        type=int,
+        nargs="+",
+        default=None,
+        help=(
+            "Override freq_indices in the config. Useful for "
+            "batched multi-freq runs."
+        ),
+    )
     args = parser.parse_args()
 
     config = load_config(args.config, args.run)
 
     # Apply CLI overrides
+    if args.freq_indices is not None:
+        config.setdefault("sky", {})["freq_indices"] = (
+            args.freq_indices
+        )
     if args.n_singular_values is not None:
         config.setdefault("svd", {})["n_singular_values"] = (
             args.n_singular_values
