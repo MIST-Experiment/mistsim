@@ -1,3 +1,5 @@
+scripts/.mapmaking_done
+
 # mist data files
 data/*
 **.npz
