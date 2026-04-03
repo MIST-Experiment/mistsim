@@ -27,7 +27,7 @@ os.environ.setdefault("JAX_ENABLE_X64", "True")
 
 from mistsim.pipeline import (
     _resolve_config_paths,
-    generate_beam_data,
+    simulate_waterfall,
     save_sim_data,
     setup_sky_multi_freq,
 )
@@ -184,7 +184,7 @@ def main():
                 if not p.is_absolute():
                     beam_cfg["beam_file"] = str(config_dir / p)
 
-            data = generate_beam_data(beam_cfg, sky_data)
+            data = simulate_waterfall(beam_cfg, sky_data)
             save_sim_data(data, sky_data, out_path)
 
     logger.info("Done. Output in %s", out_dir)

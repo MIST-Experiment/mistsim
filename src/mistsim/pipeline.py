@@ -1507,7 +1507,7 @@ def _generate_multi_freq(config):
 
     y_parts = []
     for site in config["sites"]:
-        data = generate_beam_data(site, sky_data)
+        data = simulate_waterfall(site, sky_data)
         y_parts.append(data["y"])
 
     # Concatenate across beams/sites per frequency
@@ -1526,7 +1526,7 @@ def _generate_multi_freq(config):
     }
 
 
-def generate_beam_data(beam_cfg, sky_data):
+def simulate_waterfall(beam_cfg, sky_data):
     """Forward-simulate one beam across all frequencies.
 
     Uses ``cro.simulator.convolve`` for wideband simulation in a
@@ -1931,7 +1931,7 @@ def save_sim_data(data, sky_data, path):
     Parameters
     ----------
     data : dict
-        Output of :func:`generate_beam_data`.
+        Output of :func:`simulate_waterfall`.
     sky_data : dict
         Output of :func:`setup_sky_multi_freq`.
     path : str or Path
