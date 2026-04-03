@@ -44,7 +44,7 @@ def load_config(path, run_name):
     Returns
     -------
     dict
-        Fully expanded config dict ready for :func:`run_pipeline`.
+        Fully expanded config dict ready for :func:`run_mapmaking`.
     """
     path = Path(path)
     config_dir = path.resolve().parent
@@ -253,6 +253,103 @@ def setup_sky(config, freq_ix=None, haslam_scaled=None):
     x_hp = np.asarray(mapmaking.alm1d_to_hp(x_packed))
 
     return sky, x_packed, x_hp, freqs, sim_freq
+
+
+def setup_sky_multi_freq(config):
+    """Load Haslam map at all frequencies. Beam-independent.
+
+    Computes sky SHT once for reuse across multiple beams.
+    Returns truth at mapmaking ``lmax`` and forward-model sky
+    alm at ``lmax_sim``.
+
+    Parameters
+    ----------
+    config : dict
+        Pipeline config with ``sky`` and ``observation`` sections.
+
+    Returns
+    -------
+    dict
+        Keys: sky, sky_alm_sim, x_packed, x_hp, freqs,
+        sim_freqs, freq_indices, lmax, lmax_sim, times.
+
+    """
+    obs = config["observation"]
+    lmax = obs["lmax"]
+    lmax_sim = obs.get("lmax_sim") or lmax
+    times = _make_times(obs)
+    sky_cfg = config["sky"]
+    freqs_arr = np.arange(*sky_cfg["freq_range"])
+
+    freq_indices = _resolve_freq_indices(config)
+    nfreq = len(freq_indices)
+    sim_freqs_arr = freqs_arr[np.array(freq_indices)]
+
+    if lmax_sim > lmax:
+        logger.info(
+            "Forward model at lmax_sim=%d, mapmaking at lmax=%d",
+            lmax_sim,
+            lmax,
+        )
+
+    # Load and scale Haslam map once for all frequencies.
+    d = np.load(sky_cfg["haslam_file"])
+    beta = sky_cfg.get("spectral_index", -2.55)
+    if "f0" in d:
+        haslam_onefreq = d["m"]
+        f0_haslam = float(d["f0"])
+    else:
+        haslam_onefreq = d["m"][-1]
+        f0_haslam = d["freqs"][-1]
+    haslam_scaled = _scale_map(
+        haslam_onefreq, freqs_arr, beta=beta, f0=f0_haslam
+    )
+
+    # Sky SHT
+    sampling = sky_cfg.get("sampling", "mwss")
+    sky_maps = haslam_scaled[np.array(freq_indices)]
+    sky = Sky(
+        sky_maps,
+        sim_freqs_arr,
+        sampling=sampling,
+        coord="galactic",
+    )
+    sky_alm_full = sky.compute_alm_eq(world="earth")
+
+    # Truth at mapmaking lmax
+    sky_alm = cro.utils.reduce_lmax(sky_alm_full, lmax)
+    nalm = (lmax + 1) ** 2
+    x_packed_flat = np.asarray(
+        mapmaking.pack_s2fft_to_real(sky_alm)
+    )
+    x_packed_all = x_packed_flat.reshape(nfreq, nalm)
+    x_hp_list = [
+        np.asarray(mapmaking.alm1d_to_hp(x_packed_all[i]))
+        for i in range(nfreq)
+    ]
+
+    # Sky at forward-model resolution
+    if lmax_sim > lmax:
+        sky_alm_sim = cro.utils.reduce_lmax(
+            sky_alm_full, lmax_sim
+        )
+    else:
+        sky_alm_sim = sky_alm
+
+    logger.info("Sky SHT done for %d frequencies", nfreq)
+
+    return {
+        "sky": sky,
+        "sky_alm_sim": sky_alm_sim,
+        "x_packed": x_packed_all,
+        "x_hp": np.stack(x_hp_list),
+        "freqs": freqs_arr,
+        "sim_freqs": sim_freqs_arr,
+        "freq_indices": freq_indices,
+        "lmax": lmax,
+        "lmax_sim": lmax_sim,
+        "times": times,
+    }
 
 
 # ------------------------------------------------------------------
@@ -1020,11 +1117,12 @@ def posterior_uncertainty(
 # ------------------------------------------------------------------
 
 
-def _prepare_freq_data(config, times, freqs):
+def _prepare_freq_data(config, times, freqs, y=None, x_packed=None, x_hp=None):
     """Build per-frequency arrays for the ``lax.map`` solve.
 
-    Batches sky SHT and beam rotations across all frequencies
-    to avoid per-frequency compilation overhead.
+    When *y*, *x_packed*, and *x_hp* are provided the forward
+    model is skipped and the solver is prepared directly from the
+    supplied data.  This is the path used by ``run_mapmaking``.
 
     Returns numpy/jax arrays stacked over frequencies,
     plus per-site phases (shared across freqs).
@@ -1041,7 +1139,9 @@ def _prepare_freq_data(config, times, freqs):
     df = (freqs[1] - freqs[0]) * 1e6
     dt = (times[1] - times[0]).to_value(u.s)
 
-    # Load and scale Haslam map once for all frequencies.
+    have_data = y is not None
+
+    # --- Sky model (always needed for beam rotation) ---
     d = np.load(sky_cfg["haslam_file"])
     beta = sky_cfg.get("spectral_index", -2.55)
     if "f0" in d:
@@ -1054,7 +1154,6 @@ def _prepare_freq_data(config, times, freqs):
         haslam_onefreq, freqs_arr, beta=beta, f0=f0_haslam
     )
 
-    # --- Sky: single multi-freq SHT ---
     sampling = sky_cfg.get("sampling", "mwss")
     sky_maps = haslam_scaled[np.array(freq_indices)]
     sky = Sky(
@@ -1063,20 +1162,24 @@ def _prepare_freq_data(config, times, freqs):
         sampling=sampling,
         coord="galactic",
     )
-    sky_alm = sky.compute_alm_eq(world="earth")
-    sky_alm = cro.utils.reduce_lmax(sky_alm, lmax)
 
-    nalm = (lmax + 1) ** 2
-    x_packed_flat = np.asarray(mapmaking.pack_s2fft_to_real(sky_alm))
-    x_packed_all = x_packed_flat.reshape(nfreq, nalm)
-    x_hp_list = [
-        np.asarray(mapmaking.alm1d_to_hp(x_packed_all[i]))
-        for i in range(nfreq)
-    ]
-    logger.info("Sky SHT done for %d frequencies", nfreq)
+    # --- Truth / prior sky ---
+    if x_packed is None:
+        sky_alm_full = sky.compute_alm_eq(world="earth")
+        sky_alm = cro.utils.reduce_lmax(sky_alm_full, lmax)
+        nalm = (lmax + 1) ** 2
+        x_packed_flat = np.asarray(mapmaking.pack_s2fft_to_real(sky_alm))
+        x_packed = x_packed_flat.reshape(nfreq, nalm)
+    if x_hp is None:
+        x_hp_list = [
+            np.asarray(mapmaking.alm1d_to_hp(x_packed[i]))
+            for i in range(nfreq)
+        ]
+        x_hp = np.stack(x_hp_list)
 
-    # --- Beams: one multi-freq beam per site ---
-    # beam_alms_per_site[s] has shape (nfreq, L, 2L-1)
+    logger.info("Sky model ready for %d frequencies", nfreq)
+
+    # --- Beams at mapmaking lmax ---
     beam_alms_per_site = []
     phases_per_site = []
     for s, site in enumerate(config["sites"]):
@@ -1103,35 +1206,36 @@ def _prepare_freq_data(config, times, freqs):
             nfreq,
         )
 
-    # --- Forward model, noise, prior per frequency ---
+    # --- Forward model (if no data provided) + noise + prior ---
     y_list, Ndiag_list, noise_list, Sdiag_list = (
         [],
         [],
         [],
         [],
     )
-    # beam_alms output: (nfreq, nsites, L, 2L-1)
     beam_alms_list = []
     for i in range(nfreq):
         beams_f = [ba[i] for ba in beam_alms_per_site]
         beam_alms_list.append(jnp.stack(beams_f))
 
-        y_parts = []
-        for s in range(len(config["sites"])):
-            y_s = mapmaking._forward_single_freq(
-                jnp.asarray(x_packed_all[i]),
-                beam_alms_per_site[s][i],
-                phases_per_site[s],
-            )
-            y_parts.append(np.asarray(y_s))
+        if have_data:
+            y_f = y[i]
+        else:
+            y_parts = []
+            for s in range(len(config["sites"])):
+                y_s = mapmaking._forward_single_freq(
+                    jnp.asarray(x_packed[i]),
+                    beam_alms_per_site[s][i],
+                    phases_per_site[s],
+                )
+                y_parts.append(np.asarray(y_s))
+            y_f = np.concatenate(y_parts)
 
-        y_f = np.concatenate(y_parts)
         y_list.append(y_f)
         Nd_f, n_f = compute_noise(y_f, df, dt, seed=noise_seed + i)
         Ndiag_list.append(Nd_f)
         noise_list.append(n_f)
-        Sdiag_list.append(compute_prior(x_packed_all[i], lmax))
-
+        Sdiag_list.append(compute_prior(x_packed[i], lmax))
         logger.info(
             "Prepared freq %d/%d (%.0f MHz)",
             i + 1,
@@ -1146,8 +1250,8 @@ def _prepare_freq_data(config, times, freqs):
         "Ndiag": jnp.asarray(np.stack(Ndiag_list)),
         "Sdiag": jnp.asarray(np.stack(Sdiag_list)),
         "noise": jnp.asarray(np.stack(noise_list)),
-        "x_packed": x_packed_all,
-        "x_hp": np.stack(x_hp_list),
+        "x_packed": x_packed,
+        "x_hp": x_hp,
         "sim_freqs": sim_freqs_arr,
         "freq_indices": freq_indices,
     }
@@ -1313,39 +1417,223 @@ def _rsvd_all_freqs(fdata, config):
 
 
 # ------------------------------------------------------------------
-# Top-level orchestrator
+# Time helper
 # ------------------------------------------------------------------
 
 
-def _run_single_freq(config):
-    """Original single-frequency pipeline (backward compat)."""
-    logger.info("Setting up sky")
-    sky, x_packed, x_hp, freqs, sim_freq = setup_sky(config)
-
-    obs = config["observation"]
+def _make_times(obs):
+    """Build time array from observation config."""
     tstart = Time(obs["start_time"])
     tend = tstart + obs["n_sidereal_days"] * u.sday
-    times = cro.utils.time_array(
+    return cro.utils.time_array(
         t_start=tstart,
         t_end=tend,
         N_times=obs["n_times"],
     )
+
+
+def _time_spacing(obs, freqs):
+    """Return df (Hz) and dt (seconds) from config and freqs."""
+    times = _make_times(obs)
+    df = (freqs[1] - freqs[0]) * 1e6
+    dt = (times[1] - times[0]).to_value(u.s)
+    return df, dt
+
+
+# ------------------------------------------------------------------
+# Stage 1: Forward simulation (data generation)
+# ------------------------------------------------------------------
+
+
+def _generate_single_freq(config):
+    """Generate forward-model timestream for a single frequency.
+
+    Returns
+    -------
+    dict
+        Keys: y, x_packed, x_hp, freqs, sim_freq, lmax, lmax_sim,
+        config.
+
+    """
+    logger.info("Setting up sky")
+    sky, x_packed, x_hp, freqs, sim_freq = setup_sky(config)
+
+    obs = config["observation"]
+    times = _make_times(obs)
     lmax = obs["lmax"]
+    lmax_sim = obs.get("lmax_sim") or lmax
+
+    # Forward model at lmax_sim
+    if lmax_sim > lmax:
+        logger.info(
+            "Forward model at lmax_sim=%d, mapmaking at lmax=%d",
+            lmax_sim,
+            lmax,
+        )
+        config_sim = copy.deepcopy(config)
+        config_sim["observation"]["lmax"] = lmax_sim
+        sky_sim, x_sim, _, _, _ = setup_sky(config_sim)
+        ops_sim = build_stacked_A_jax(config_sim, sky_sim, times.jd, sim_freq)
+        logger.info("Running forward model")
+        y = np.asarray(ops_sim["forward_fn"](jnp.asarray(x_sim)))
+    else:
+        ops = build_stacked_A_jax(config, sky, times.jd, sim_freq)
+        logger.info("Running forward model")
+        y = np.asarray(ops["forward_fn"](jnp.asarray(x_packed)))
+
+    return {
+        "y": y,
+        "x_packed": x_packed,
+        "x_hp": x_hp,
+        "freqs": freqs,
+        "sim_freq": sim_freq,
+        "lmax": lmax,
+        "lmax_sim": lmax_sim,
+        "config": config,
+    }
+
+
+def _generate_multi_freq(config):
+    """Generate forward-model timestreams for multiple frequencies.
+
+    Returns
+    -------
+    dict
+        Keys: y, x_packed, x_hp, freqs, sim_freqs, freq_indices,
+        lmax, lmax_sim, config.
+
+    """
+    sky_data = setup_sky_multi_freq(config)
+
+    y_parts = []
+    for site in config["sites"]:
+        data = generate_beam_data(site, sky_data)
+        y_parts.append(data["y"])
+
+    # Concatenate across beams/sites per frequency
+    y_all = np.concatenate(y_parts, axis=1)
+
+    return {
+        "y": y_all,
+        "x_packed": sky_data["x_packed"],
+        "x_hp": sky_data["x_hp"],
+        "freqs": sky_data["freqs"],
+        "sim_freqs": sky_data["sim_freqs"],
+        "freq_indices": sky_data["freq_indices"],
+        "lmax": sky_data["lmax"],
+        "lmax_sim": sky_data["lmax_sim"],
+        "config": config,
+    }
+
+
+def generate_beam_data(beam_cfg, sky_data):
+    """Forward-simulate one beam across all frequencies.
+
+    Uses ``cro.simulator.convolve`` for wideband simulation in a
+    single call.
+
+    Parameters
+    ----------
+    beam_cfg : dict
+        Expanded beam/site entry with keys ``name``, ``lat``,
+        ``lon``, ``alt``, and beam parameters (``beam_file``,
+        ``beam_az_rot``, etc.).
+    sky_data : dict
+        Output of :func:`setup_sky_multi_freq`.
+
+    Returns
+    -------
+    dict
+        Keys: y, beam_name.
+
+    """
+    sky = sky_data["sky"]
+    sky_alm_sim = sky_data["sky_alm_sim"]
+    sim_freqs = sky_data["sim_freqs"]
+    freqs = sky_data["freqs"]
+    freq_indices = sky_data["freq_indices"]
+    lmax_sim = sky_data["lmax_sim"]
+    times = sky_data["times"]
+
+    beam = _build_multi_freq_beam(
+        beam_cfg, sim_freqs, freqs, freq_indices
+    )
+    sim = Simulator(
+        beam,
+        sky,
+        times.jd,
+        sim_freqs,
+        beam_cfg["lon"],
+        beam_cfg["lat"],
+        alt=beam_cfg.get("alt", 0),
+        lmax=lmax_sim,
+    )
+    beam_alm = cro.utils.reduce_lmax(
+        sim.compute_beam_eq(), lmax_sim
+    )
+
+    wf = cro.simulator.convolve(beam_alm, sky_alm_sim, sim.phases)
+    wf /= beam.compute_norm()[None, :]
+    y = np.asarray(wf.real.T)  # (nfreq, ntimes)
+
+    logger.info(
+        "Forward model done for %s (%d freqs)",
+        beam_cfg["name"],
+        len(sim_freqs),
+    )
+
+    return {
+        "y": y,
+        "beam_name": beam_cfg["name"],
+    }
+
+
+# ------------------------------------------------------------------
+# Top-level orchestrator
+# ------------------------------------------------------------------
+
+
+def _solve_single_freq(config, y, x_packed, x_hp, freqs):
+    """Mapmaking solver for single frequency.
+
+    Parameters
+    ----------
+    config : dict
+        Full pipeline config.
+    y : np.ndarray
+        Timestream data (from simulation or real observation).
+    x_packed : np.ndarray or None
+        True sky packed alm (for prior).  If *None*, computed
+        from the Haslam sky model via ``setup_sky``.
+    x_hp : np.ndarray or None
+        True sky in healpy ordering (for diagnostics).
+    freqs : np.ndarray
+        Full frequency array.
+
+    """
+    obs = config["observation"]
+    times = _make_times(obs)
+    lmax = obs["lmax"]
+    lmax_sim = obs.get("lmax_sim") or lmax
     solver = config.get("solver", "cg")
     svd_cfg = config.get("svd", {})
     post_cfg = config.get("posterior", {})
     noise_seed = post_cfg.get("seed", 1420)
 
-    if solver == "cg":
-        logger.info("Building JAX operators")
-        ops = build_stacked_A_jax(config, sky, times.jd, sim_freq)
-        logger.info("Running forward model")
-        y = np.asarray(ops["forward_fn"](jnp.asarray(x_packed)))
+    # Sky for prior and A-matrix
+    if x_packed is None:
+        logger.info("Computing sky model for prior")
+        sky, x_packed, x_hp, _, sim_freq = setup_sky(config)
     else:
-        logger.info("Building A-matrices")
+        sky, _, _, _, sim_freq = setup_sky(config)
+
+    # Mapmaking operators (at lmax)
+    if solver == "cg":
+        logger.info("Building JAX operators at lmax=%d", lmax)
+        ops = build_stacked_A_jax(config, sky, times.jd, sim_freq)
+    else:
+        logger.info("Building A-matrices at lmax=%d", lmax)
         A = build_stacked_A(config, sky, times.jd, sim_freq)
-        logger.info("Running forward model")
-        y = A @ x_packed
 
     df = (freqs[1] - freqs[0]) * 1e6
     dt = (times[1] - times[0]).to_value(u.s)
@@ -1434,6 +1722,7 @@ def _run_single_freq(config):
         "run_name": run_name_from_config(config),
         "freqs": freqs,
         "lmax": lmax,
+        "lmax_sim": lmax_sim,
         "x_true": x_hp,
         "x_rec": x_rec_hp,
         "std_alm": post["std_alm"],
@@ -1448,28 +1737,32 @@ def _run_single_freq(config):
     }
 
 
-def _run_multi_freq(config):
-    """Multi-frequency pipeline with lax.map solve."""
+def _solve_multi_freq(config, y=None, x_packed=None, x_hp=None):
+    """Multi-frequency mapmaking solver.
+
+    When *y* is provided, the forward model is skipped.
+    """
     obs = config["observation"]
-    tstart = Time(obs["start_time"])
-    tend = tstart + obs["n_sidereal_days"] * u.sday
-    times = cro.utils.time_array(
-        t_start=tstart,
-        t_end=tend,
-        N_times=obs["n_times"],
-    )
+    times = _make_times(obs)
     lmax = obs["lmax"]
+    lmax_sim = obs.get("lmax_sim") or lmax
     fr = config["sky"]["freq_range"]
     freqs = np.arange(fr[0], fr[1])
 
-    # Data prep (Python loop)
-    fdata = _prepare_freq_data(config, times, freqs)
+    fdata = _prepare_freq_data(
+        config,
+        times,
+        freqs,
+        y=y,
+        x_packed=x_packed,
+        x_hp=x_hp,
+    )
     nfreq = len(fdata["freq_indices"])
 
-    # CG solve (lax.map — lightweight output)
+    # CG solve (lax.map)
     x_rec_all = np.asarray(_solve_all_freqs(fdata, config))
 
-    # rSVD (lax.map — single compilation for all frequencies)
+    # rSVD (lax.map)
     Sigma_all, Vh_all = _rsvd_all_freqs(fdata, config)
     Sigma_all = np.asarray(Sigma_all)
     Vh_all = np.asarray(Vh_all)
@@ -1523,6 +1816,7 @@ def _run_multi_freq(config):
         "freqs": freqs,
         "sim_freqs": fdata["sim_freqs"],
         "lmax": lmax,
+        "lmax_sim": lmax_sim,
         "x_true": fdata["x_hp"],
         "x_rec": x_rec_all,
         "std_alm": np.stack(std_alm_list),
@@ -1537,27 +1831,258 @@ def _run_multi_freq(config):
     }
 
 
-def run_pipeline(config):
-    """Run the full mapmaking pipeline from a config dict.
+def _is_single_freq(config):
+    """Check whether config selects single- or multi-freq path."""
+    sky_cfg = config.get("sky", {})
+    return "freq_index" in sky_cfg and "freq_indices" not in sky_cfg
 
-    When ``freq_index`` is set in the sky config, runs the
-    single-frequency path (backward compatible).  Otherwise
-    runs all frequencies via ``lax.map``.
 
-    Set ``config["solver"]`` to ``"cg"`` (default) or
-    ``"svd"`` for the original ARPACK path.
+# ------------------------------------------------------------------
+# Public API
+# ------------------------------------------------------------------
+
+
+def generate_data(config):
+    """Stage 1: Forward simulation only.
+
+    Generates simulated timestream data from the sky model and
+    beam configuration.  The result can be saved with
+    :func:`save_data` and later loaded for mapmaking with
+    :func:`run_mapmaking`.
+
+    Returns
+    -------
+    dict
+        Keys: y, x_packed, x_hp, freqs, lmax, lmax_sim, config.
+        Multi-freq runs also include sim_freqs, freq_indices.
+
+    """
+    if _is_single_freq(config):
+        return _generate_single_freq(config)
+    return _generate_multi_freq(config)
+
+
+def save_data(data, path):
+    """Save forward-simulation data to npz.
+
+    Parameters
+    ----------
+    data : dict
+        Output of :func:`generate_data`.
+    path : str or Path
+        Output file path.
+
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    d = {
+        "y": data["y"],
+        "x_packed": data["x_packed"],
+        "x_hp": data["x_hp"],
+        "freqs": data["freqs"],
+        "lmax": data["lmax"],
+        "lmax_sim": data["lmax_sim"],
+        "config_yaml": yaml.dump(data["config"]),
+    }
+    if "sim_freqs" in data:
+        d["sim_freqs"] = data["sim_freqs"]
+        d["multi_freq"] = True
+    np.savez(path, **d)
+    logger.info("Saved data to %s", path)
+
+
+def load_data(path):
+    """Load forward-simulation data (or real data) from npz.
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to npz file.
+
+    Returns
+    -------
+    dict
+        Keys: y, x_packed (may be None), x_hp (may be None),
+        freqs, lmax, lmax_sim, config.
+
+    """
+    path = Path(path)
+    d = np.load(path, allow_pickle=True)
+    config = yaml.safe_load(str(d["config_yaml"]))
+    result = {
+        "y": d["y"],
+        "x_packed": d.get("x_packed"),
+        "x_hp": d.get("x_hp"),
+        "freqs": d["freqs"],
+        "lmax": int(d["lmax"]),
+        "lmax_sim": int(d.get("lmax_sim", d["lmax"])),
+        "config": config,
+    }
+    if "sim_freqs" in d:
+        result["sim_freqs"] = d["sim_freqs"]
+        result["freq_indices"] = d.get("freq_indices")
+    logger.info("Loaded data from %s", path)
+    return result
+
+
+def save_sim_data(data, sky_data, path):
+    """Save per-beam forward-simulation data to npz.
+
+    Parameters
+    ----------
+    data : dict
+        Output of :func:`generate_beam_data`.
+    sky_data : dict
+        Output of :func:`setup_sky_multi_freq`.
+    path : str or Path
+        Output file path.
+
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(
+        path,
+        y=data["y"],
+        beam_name=data["beam_name"],
+        x_packed=sky_data["x_packed"],
+        x_hp=sky_data["x_hp"],
+        freqs=sky_data["sim_freqs"],
+        lmax=sky_data["lmax"],
+        lmax_sim=sky_data["lmax_sim"],
+    )
+    logger.info("Saved %s to %s", data["beam_name"], path)
+
+
+def load_sim_data(path):
+    """Load per-beam forward-simulation data from npz.
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to per-beam npz file.
+
+    Returns
+    -------
+    dict
+        Keys: y, beam_name, x_packed, x_hp, freqs, lmax,
+        lmax_sim.
+
+    """
+    path = Path(path)
+    d = np.load(path, allow_pickle=True)
+    result = {
+        "y": d["y"],
+        "beam_name": str(d["beam_name"]),
+        "x_packed": d["x_packed"],
+        "x_hp": d["x_hp"],
+        "freqs": d["freqs"],
+        "lmax": int(d["lmax"]),
+        "lmax_sim": int(d["lmax_sim"]),
+    }
+    logger.info("Loaded %s from %s", result["beam_name"], path)
+    return result
+
+
+def load_and_concat_sim_data(paths, freq_range=None):
+    """Load per-beam NPZs and concatenate for mapmaking.
+
+    Parameters
+    ----------
+    paths : list of str or Path
+        Paths to per-beam npz files.
+    freq_range : list of int or None
+        ``[f_min, f_max)`` in MHz.  If given, only frequencies
+        within this range are kept.
+
+    Returns
+    -------
+    dict
+        Keys: y (nfreq, n_beams * ntimes), x_packed, x_hp,
+        freqs, sim_freqs, lmax, lmax_sim.
+
+    """
+    beams = [load_sim_data(p) for p in paths]
+    ref = beams[0]
+
+    # Determine target frequencies
+    target_freqs = ref["freqs"]
+    if freq_range is not None:
+        mask = (target_freqs >= freq_range[0]) & (
+            target_freqs < freq_range[1]
+        )
+        target_freqs = target_freqs[mask]
+
+    # Select and concatenate y for each beam
+    y_parts = []
+    for b in beams:
+        # Find indices of target_freqs in this beam's freqs
+        idx = np.array([
+            int(np.where(b["freqs"] == f)[0][0])
+            for f in target_freqs
+        ])
+        y_parts.append(b["y"][idx])
+    # y_parts[i] shape: (nfreq, ntimes)
+    # Concatenate along time axis
+    y = np.concatenate(y_parts, axis=1)
+
+    # Sky truth from first beam (same for all)
+    ref_idx = np.array([
+        int(np.where(ref["freqs"] == f)[0][0])
+        for f in target_freqs
+    ])
+    x_packed = ref["x_packed"][ref_idx]
+    x_hp = ref["x_hp"][ref_idx]
+
+    names = [b["beam_name"] for b in beams]
+    logger.info(
+        "Concatenated %d beams (%s), %d freqs, y shape %s",
+        len(beams),
+        ", ".join(names),
+        len(target_freqs),
+        y.shape,
+    )
+
+    return {
+        "y": y,
+        "x_packed": x_packed,
+        "x_hp": x_hp,
+        "freqs": target_freqs,
+        "sim_freqs": target_freqs,
+        "lmax": ref["lmax"],
+        "lmax_sim": ref["lmax_sim"],
+    }
+
+
+def run_mapmaking(config, y, x_true=None, x_packed=None):
+    """Stage 2: Mapmaking from data.
+
+    Builds the A-matrix from the beam/observer configuration,
+    computes noise and prior, and solves for the sky.
+
+    Parameters
+    ----------
+    config : dict
+        Full pipeline config (beams, sites, times, lmax, etc.).
+    y : np.ndarray
+        Timestream data — from simulation or real observation.
+    x_true : np.ndarray or None
+        True sky alm in healpy ordering (for diagnostics).
+        Pass *None* for real data.
+    x_packed : np.ndarray or None
+        True sky in packed-real format (for prior).
+        If *None*, the prior is computed from the Haslam sky
+        model specified in the config.
 
     Returns
     -------
     results : dict
 
     """
-    sky_cfg = config.get("sky", {})
-    # freq_indices (plural) activates multi-freq even if
-    # freq_index is also present from defaults.
-    if "freq_index" in sky_cfg and "freq_indices" not in sky_cfg:
-        return _run_single_freq(config)
-    return _run_multi_freq(config)
+    if _is_single_freq(config):
+        fr = config["sky"]["freq_range"]
+        freqs = np.arange(fr[0], fr[1])
+        return _solve_single_freq(config, y, x_packed, x_true, freqs)
+    return _solve_multi_freq(config, y=y, x_packed=x_packed, x_hp=x_true)
 
 
 # ------------------------------------------------------------------
@@ -1572,6 +2097,7 @@ def save_results(results, path):
     d = {
         "freqs": results["freqs"],
         "lmax": results["lmax"],
+        "lmax_sim": results.get("lmax_sim", results["lmax"]),
         "x_true": results["x_true"],
         "x_rec": results["x_rec"],
         "cl_prior": results["cl_prior"],

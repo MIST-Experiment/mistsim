@@ -12,10 +12,12 @@ os.environ.setdefault("JAX_PLATFORMS", "cpu")
 os.environ.setdefault("JAX_ENABLE_X64", "True")
 
 from mistsim.pipeline import (
+    generate_data,
     generate_notebook,
+    load_and_concat_sim_data,
     load_config,
+    run_mapmaking,
     run_name_from_config,
-    run_pipeline,
     save_results,
 )
 
@@ -67,11 +69,14 @@ def main():
         help="Override output directory",
     )
     parser.add_argument(
-        "--freq-indices",
-        type=int,
-        nargs="+",
+        "--data-dir",
+        type=str,
         default=None,
-        help="Override frequency indices (multi-freq)",
+        help=(
+            "Directory with per-beam synthetic data NPZ files "
+            "(from generate_all_data.py). Loads and concatenates "
+            "the beams listed in the run config."
+        ),
     )
     args = parser.parse_args()
 
@@ -82,13 +87,30 @@ def main():
         config.setdefault("svd", {})["n_singular_values"] = (
             args.n_singular_values
         )
-    if args.freq_indices is not None:
-        config.setdefault("sky", {})["freq_indices"] = args.freq_indices
-        # Remove freq_index so multi-freq path activates
-        config["sky"].pop("freq_index", None)
 
-    # Run pipeline
-    results = run_pipeline(config)
+    # Load or generate data
+    if args.data_dir is not None:
+        data_dir = Path(args.data_dir)
+        beam_names = [s["name"] for s in config["sites"]]
+        paths = [data_dir / f"{name}.npz" for name in beam_names]
+        for p in paths:
+            if not p.exists():
+                raise FileNotFoundError(
+                    f"Missing beam data: {p}. "
+                    f"Run generate_all_data.py first."
+                )
+        freq_range = config.get("sky", {}).get("freq_range")
+        data = load_and_concat_sim_data(paths, freq_range)
+    else:
+        data = generate_data(config)
+
+    # Run mapmaking
+    results = run_mapmaking(
+        config,
+        data["y"],
+        x_true=data.get("x_hp"),
+        x_packed=data.get("x_packed"),
+    )
 
     # Override nvec if requested (single-freq only)
     if args.nvec is not None:
@@ -116,7 +138,9 @@ def main():
     # Notebook
     gen_nb = out_cfg.get("generate_notebook", True)
     if not args.no_notebook and gen_nb:
-        nb_dir = Path(out_cfg.get("notebooks_dir", "notebooks_out")).resolve()
+        nb_dir = Path(
+            out_cfg.get("notebooks_dir", "notebooks_out")
+        ).resolve()
         nb_dir.mkdir(parents=True, exist_ok=True)
         nb_path = nb_dir / f"{run_name}.ipynb"
         generate_notebook(results, npz_path, nb_path)
