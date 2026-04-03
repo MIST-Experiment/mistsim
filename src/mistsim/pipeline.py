@@ -2081,6 +2081,15 @@ def run_mapmaking(config, y, x_true=None, x_packed=None):
     if _is_single_freq(config):
         fr = config["sky"]["freq_range"]
         freqs = np.arange(fr[0], fr[1])
+        fi = config["sky"]["freq_index"]
+        # If arrays come from multi-freq data (e.g. load_and_concat),
+        # select the single frequency slice.
+        if y is not None and y.ndim == 2:
+            y = y[fi]
+        if x_packed is not None and x_packed.ndim == 2:
+            x_packed = x_packed[fi]
+        if x_true is not None and x_true.ndim == 2:
+            x_true = x_true[fi]
         return _solve_single_freq(config, y, x_packed, x_true, freqs)
     return _solve_multi_freq(config, y=y, x_packed=x_packed, x_hp=x_true)
 
