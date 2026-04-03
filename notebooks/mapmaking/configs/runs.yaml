@@ -137,7 +137,7 @@ runs:
       - nv-dip
       - nv-mono-analytic
     svd:
-      n_singular_values: 1200
+      n_singular_values: 2000
     output:
       results_dir: "../results/40mhz"
       notebooks_dir: "../notebooks_out/40mhz"
@@ -148,8 +148,10 @@ runs:
       - mars-csa2022-dip
       - mars-mono-analytic
       - mars-lake-dip
+    sky:
+      freq_range: [40, 126]
     svd:
-      n_singular_values: 1200
+      n_singular_values: 1500
     output:
       results_dir: "../results/40mhz"
       notebooks_dir: "../notebooks_out/40mhz"
@@ -162,8 +164,10 @@ runs:
       - nv-dip
       - nv-mono-analytic
       - mars-lake-dip
+    sky:
+      freq_range: [40, 126]
     svd:
-      n_singular_values: 1200
+      n_singular_values: 2500
     output:
       results_dir: "../results/40mhz"
       notebooks_dir: "../notebooks_out/40mhz"
@@ -178,12 +182,14 @@ runs:
       - mars-lake-dip
       - alma-csa2022-dip
       - alma-mono-analytic
+    sky:
+      freq_range: [40, 126]
     svd:
-      n_singular_values: 1200
+      n_singular_values: 3500
     output:
       results_dir: "../results/40mhz"
       notebooks_dir: "../notebooks_out/40mhz"
-  
+
   alma-torres:  # Groups 4+5: 4 beams, max rank = 2000
     run_name: alma-torres
     beams:
@@ -192,7 +198,7 @@ runs:
       - torres-csa2022-dip
       - torres-mono-analytic
     svd:
-      n_singular_values: 1200
+      n_singular_values: 2000
     output:
       results_dir: "../results/40mhz"
       notebooks_dir: "../notebooks_out/40mhz"
@@ -209,8 +215,10 @@ runs:
       - alma-mono-analytic
       - torres-csa2022-dip
       - torres-mono-analytic
+    sky:
+      freq_range: [40, 126]
     svd:
-      n_singular_values: 2000
+      n_singular_values: 3000
     output:
       results_dir: "../results/40mhz"
       notebooks_dir: "../notebooks_out/40mhz"
@@ -236,7 +244,7 @@ runs:
       - nv-dip
       - nv-mono-analytic
     svd:
-      n_singular_values: 1200
+      n_singular_values: 2000
     sky:
       freq_index: 0
     output:
@@ -253,7 +261,7 @@ runs:
       - alma-csa2022-dip
       - alma-mono-analytic
     svd:
-      n_singular_values: 1200
+      n_singular_values: 3000
     sky:
       freq_index: 0
     output:
@@ -287,7 +295,7 @@ runs:
       - torres-csa2022-dip
       - torres-mono-analytic
     svd:
-      n_singular_values: 2000
+      n_singular_values: 3000
     sky:
       freq_index: 0
     output:
@@ -308,7 +316,7 @@ runs:
       - torres-csa2022-dip
       - torres-mono-analytic
     svd:
-      n_singular_values: 2000
+      n_singular_values: 3000
     sky:
       freq_indices: all  # 101 freqs, 25-125 MHz
 
@@ -326,7 +334,7 @@ runs:
       - torres-csa2022-dip
       - torres-mono-analytic
     svd:
-      n_singular_values: 2000
+      n_singular_values: 3000
     sky:
       freq_indices: all  # 86 freqs, 40-125 MHz (limited by lake beam)
       freq_range: [40, 126]
