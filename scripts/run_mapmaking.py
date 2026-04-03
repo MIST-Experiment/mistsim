@@ -124,6 +124,7 @@ def main():
         data["y"],
         x_true=data.get("x_hp"),
         x_packed=data.get("x_packed"),
+        beam_alms_eq=data.get("beam_alms_eq"),
     )
 
     # Override nvec if requested (single-freq only)

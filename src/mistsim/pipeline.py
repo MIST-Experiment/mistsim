@@ -1117,7 +1117,10 @@ def posterior_uncertainty(
 # ------------------------------------------------------------------
 
 
-def _prepare_freq_data(config, times, freqs, y=None, x_packed=None, x_hp=None):
+def _prepare_freq_data(
+    config, times, freqs, y=None, x_packed=None, x_hp=None,
+    beam_alms_eq=None,
+):
     """Build per-frequency arrays for the ``lax.map`` solve.
 
     When *y*, *x_packed*, and *x_hp* are provided the forward
@@ -1196,15 +1199,35 @@ def _prepare_freq_data(config, times, freqs, y=None, x_packed=None, x_hp=None):
             alt=site.get("alt", 0),
             lmax=lmax,
         )
-        ba = sim.compute_beam_eq()
-        ba = cro.utils.reduce_lmax(ba, lmax)
-        beam_alms_per_site.append(ba)
         phases_per_site.append(sim.phases)
-        logger.info(
-            "Beam SHT done for site %s (%d freqs)",
-            site["name"],
-            nfreq,
-        )
+
+        if beam_alms_eq is not None:
+            cached = jnp.asarray(beam_alms_eq[s])
+            cached_lmax = cached.shape[-2] - 1
+            if cached_lmax < lmax:
+                logger.warning(
+                    "Cached beam_alm lmax=%d < mapmaking "
+                    "lmax=%d for %s, recomputing",
+                    cached_lmax, lmax, site["name"],
+                )
+                ba = sim.compute_beam_eq()
+                ba = cro.utils.reduce_lmax(ba, lmax)
+            else:
+                ba = cro.utils.reduce_lmax(cached, lmax)
+                logger.info(
+                    "Using cached beam alm for %s "
+                    "(lmax %d -> %d)",
+                    site["name"], cached_lmax, lmax,
+                )
+        else:
+            ba = sim.compute_beam_eq()
+            ba = cro.utils.reduce_lmax(ba, lmax)
+            logger.info(
+                "Beam SHT done for site %s (%d freqs)",
+                site["name"],
+                nfreq,
+            )
+        beam_alms_per_site.append(ba)
 
     # --- Forward model (if no data provided) + noise + prior ---
     y_list, Ndiag_list, noise_list, Sdiag_list = (
@@ -1585,6 +1608,7 @@ def simulate_waterfall(beam_cfg, sky_data):
     return {
         "y": y,
         "beam_name": beam_cfg["name"],
+        "beam_alm_eq": np.asarray(beam_alm),
     }
 
 
@@ -1737,7 +1761,10 @@ def _solve_single_freq(config, y, x_packed, x_hp, freqs):
     }
 
 
-def _solve_multi_freq(config, y=None, x_packed=None, x_hp=None):
+def _solve_multi_freq(
+    config, y=None, x_packed=None, x_hp=None,
+    beam_alms_eq=None,
+):
     """Multi-frequency mapmaking solver.
 
     When *y* is provided, the forward model is skipped.
@@ -1756,6 +1783,7 @@ def _solve_multi_freq(config, y=None, x_packed=None, x_hp=None):
         y=y,
         x_packed=x_packed,
         x_hp=x_hp,
+        beam_alms_eq=beam_alms_eq,
     )
     nfreq = len(fdata["freq_indices"])
 
@@ -1940,16 +1968,18 @@ def save_sim_data(data, sky_data, path):
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(
-        path,
-        y=data["y"],
-        beam_name=data["beam_name"],
-        x_packed=sky_data["x_packed"],
-        x_hp=sky_data["x_hp"],
-        freqs=sky_data["sim_freqs"],
-        lmax=sky_data["lmax"],
-        lmax_sim=sky_data["lmax_sim"],
-    )
+    d = {
+        "y": data["y"],
+        "beam_name": data["beam_name"],
+        "x_packed": sky_data["x_packed"],
+        "x_hp": sky_data["x_hp"],
+        "freqs": sky_data["sim_freqs"],
+        "lmax": sky_data["lmax"],
+        "lmax_sim": sky_data["lmax_sim"],
+    }
+    if "beam_alm_eq" in data:
+        d["beam_alm_eq"] = data["beam_alm_eq"]
+    np.savez_compressed(path, **d)
     logger.info("Saved %s to %s", data["beam_name"], path)
 
 
@@ -1979,6 +2009,8 @@ def load_sim_data(path):
         "lmax": int(d["lmax"]),
         "lmax_sim": int(d["lmax_sim"]),
     }
+    if "beam_alm_eq" in d:
+        result["beam_alm_eq"] = d["beam_alm_eq"]
     logger.info("Loaded %s from %s", result["beam_name"], path)
     return result
 
@@ -2044,7 +2076,18 @@ def load_and_concat_sim_data(paths, freq_range=None):
         y.shape,
     )
 
-    return {
+    # Collect per-site beam alms if available in all beams
+    beam_alms_eq = None
+    if all("beam_alm_eq" in b for b in beams):
+        beam_alms_eq = []
+        for b in beams:
+            idx = np.array([
+                int(np.where(b["freqs"] == f)[0][0])
+                for f in target_freqs
+            ])
+            beam_alms_eq.append(b["beam_alm_eq"][idx])
+
+    result = {
         "y": y,
         "x_packed": x_packed,
         "x_hp": x_hp,
@@ -2053,9 +2096,15 @@ def load_and_concat_sim_data(paths, freq_range=None):
         "lmax": ref["lmax"],
         "lmax_sim": ref["lmax_sim"],
     }
+    if beam_alms_eq is not None:
+        result["beam_alms_eq"] = beam_alms_eq
+    return result
 
 
-def run_mapmaking(config, y, x_true=None, x_packed=None):
+def run_mapmaking(
+    config, y, x_true=None, x_packed=None,
+    beam_alms_eq=None,
+):
     """Stage 2: Mapmaking from data.
 
     Builds the A-matrix from the beam/observer configuration,
@@ -2074,6 +2123,10 @@ def run_mapmaking(config, y, x_true=None, x_packed=None):
         True sky in packed-real format (for prior).
         If *None*, the prior is computed from the Haslam sky
         model specified in the config.
+    beam_alms_eq : list of np.ndarray or None
+        Precomputed beam alms in equatorial coordinates, one
+        per site.  If *None*, the beam SHT is computed from
+        scratch.
 
     Returns
     -------
@@ -2093,7 +2146,10 @@ def run_mapmaking(config, y, x_true=None, x_packed=None):
         if x_true is not None and x_true.ndim == 2:
             x_true = x_true[fi]
         return _solve_single_freq(config, y, x_packed, x_true, freqs)
-    return _solve_multi_freq(config, y=y, x_packed=x_packed, x_hp=x_true)
+    return _solve_multi_freq(
+        config, y=y, x_packed=x_packed, x_hp=x_true,
+        beam_alms_eq=beam_alms_eq,
+    )
 
 
 # ------------------------------------------------------------------
