@@ -84,7 +84,7 @@ def main():
         "--output-dir",
         type=str,
         default=None,
-        help="Output directory (default: results/synthetic_data)",
+        help="Output directory (default: data/synthetic_data)",
     )
     parser.add_argument(
         "--beams",
@@ -122,15 +122,11 @@ def main():
             )
 
     # Output directory
+    project_root = Path(__file__).resolve().parent.parent
     out_dir = Path(
         args.output_dir
-        or defaults.get("output", {}).get(
-            "results_dir", "results/synthetic_data"
-        )
-    )
-    if not out_dir.is_absolute():
-        out_dir = config_dir / out_dir
-    out_dir = out_dir.resolve()
+        or str(project_root / "data" / "synthetic_data")
+    ).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Group beams by frequency range so we only compute the sky

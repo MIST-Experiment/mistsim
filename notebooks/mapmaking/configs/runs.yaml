@@ -27,22 +27,22 @@ sites:
 beams:
   mars-csa2022-dip:
     site: mars
-    beam_file: "../../data/20240806_for_lisa/csa2022_beam2.npz"
+    beam_file: "../../../data/20240806_for_lisa/csa2022_beam2.npz"
     beam_az_rot: 10
 
   mars-csa2022-dip-horizon:
     site: mars
-    beam_file: "../../data/20240806_for_lisa/csa2022_beam2.npz"
+    beam_file: "../../../data/20240806_for_lisa/csa2022_beam2.npz"
     beam_az_rot: 10
     horizon_max_theta: 80
 
   mars-lake-dip:
     site: mars
-    beam_file: "../../data/beam.npz"
+    beam_file: "../../../data/beam.npz"
 
   nv-dip:
     site: nv
-    beam_file: "../../data/20240806_for_lisa/jackpot_beam2.npz"
+    beam_file: "../../../data/20240806_for_lisa/jackpot_beam2.npz"
     beam_az_rot: 64
 
   mars-mono-analytic:
@@ -55,7 +55,7 @@ beams:
 
   alma-csa2022-dip:
     site: alma
-    beam_file: "../../data/20240806_for_lisa/csa2022_beam2.npz"
+    beam_file: "../../../data/20240806_for_lisa/csa2022_beam2.npz"
 
   alma-mono-analytic:
     site: alma
@@ -63,7 +63,7 @@ beams:
 
   southpole-csa2022-dip:
     site: southpole
-    beam_file: "../../data/20240806_for_lisa/csa2022_beam2.npz"
+    beam_file: "../../../data/20240806_for_lisa/csa2022_beam2.npz"
 
   southpole-mono-analytic:
     site: southpole
@@ -71,7 +71,7 @@ beams:
 
   torres-csa2022-dip:
     site: torres
-    beam_file: "../../data/20240806_for_lisa/csa2022_beam2.npz"
+    beam_file: "../../../data/20240806_for_lisa/csa2022_beam2.npz"
 
   torres-mono-analytic:
     site: torres
@@ -79,7 +79,7 @@ beams:
 
 defaults:
   sky:
-    haslam_file: "../../data/haslam_galactic_mwss.npz"
+    haslam_file: "../../../data/haslam_galactic_mwss.npz"
     spectral_index: -2.55
     freq_range: [25, 126]
     freq_index: 15  # single-freq default: 40 MHz (index into 25-125 array)

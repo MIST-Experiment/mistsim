@@ -1,5 +1,5 @@
 # mist data files
-notebooks/data/*
+data/*
 **.npz
 **.fits
 

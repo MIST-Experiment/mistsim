@@ -21,7 +21,7 @@ import jax.numpy as jnp
 import numpy as np
 import s2fft
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "notebooks" / "data"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 # Load healpix data
 print("Loading haslam_galactic.npz ...")

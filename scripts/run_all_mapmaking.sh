@@ -5,6 +5,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+DATA_DIR="${1:-data/synthetic_data}"
+
 RUNS=(
     # 40 MHz nominal (7 runs, includes lake beam)
     mars
@@ -31,7 +33,7 @@ for run in "${RUNS[@]}"; do
         continue
     fi
     echo "=== Starting $run at $(date) ==="
-    uv run python scripts/run_mapmaking.py "$run"
+    uv run python scripts/run_mapmaking.py "$run" --data-dir "$DATA_DIR"
     echo "$run" >> "$DONEFILE"
     echo "=== Finished $run at $(date) ==="
 done
