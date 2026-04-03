@@ -91,6 +91,13 @@ defaults:
     n_times: 500
     lmax: 90
     lmax_sim: 179  # forward model resolution (null = same as lmax)
+    # Beam normalization convention.  true (default) = normalize
+    # by the full-sphere beam integral so the forward model
+    # includes ground loss — matches synthetic data from
+    # simulate_waterfall.  Set to false if your data has already
+    # been corrected for ground loss (normalized by the
+    # above-horizon beam integral only).
+    ground_loss: true
 
   svd:
     # n_singular_values (k): how many singular values the rSVD
@@ -156,7 +163,7 @@ runs:
       results_dir: "../results/40mhz"
       notebooks_dir: "../notebooks_out/40mhz"
 
-  mars-nv-lake:  # Groups 1+2+3: 5 beams, max rank = 2500
+  mars-nv-lake:  # Groups 1+2+3: 5 beams
     run_name: mars-nv-lake
     beams:
       - mars-csa2022-dip
@@ -167,12 +174,12 @@ runs:
     sky:
       freq_range: [40, 126]
     svd:
-      n_singular_values: 2500
+      n_singular_values: 2000
     output:
       results_dir: "../results/40mhz"
       notebooks_dir: "../notebooks_out/40mhz"
 
-  mars-nv-lake-alma:  # Groups 1+2+3+4: 7 beams, max rank = 3500
+  mars-nv-lake-alma:  # Groups 1+2+3+4: 7 beams
     run_name: mars-nv-lake-alma
     beams:
       - mars-csa2022-dip
@@ -185,7 +192,7 @@ runs:
     sky:
       freq_range: [40, 126]
     svd:
-      n_singular_values: 3500
+      n_singular_values: 2000
     output:
       results_dir: "../results/40mhz"
       notebooks_dir: "../notebooks_out/40mhz"
@@ -203,7 +210,7 @@ runs:
       results_dir: "../results/40mhz"
       notebooks_dir: "../notebooks_out/40mhz"
 
-  all-nominal:  # Groups 1+2+3+4+5: 9 beams, max rank = 4500
+  all-nominal:  # Groups 1+2+3+4+5: 9 beams
     run_name: all-nominal
     beams:
       - mars-csa2022-dip
@@ -218,7 +225,7 @@ runs:
     sky:
       freq_range: [40, 126]
     svd:
-      n_singular_values: 3000
+      n_singular_values: 2000
     output:
       results_dir: "../results/40mhz"
       notebooks_dir: "../notebooks_out/40mhz"
@@ -261,7 +268,7 @@ runs:
       - alma-csa2022-dip
       - alma-mono-analytic
     svd:
-      n_singular_values: 3000
+      n_singular_values: 2000
     sky:
       freq_index: 0
     output:
@@ -295,7 +302,7 @@ runs:
       - torres-csa2022-dip
       - torres-mono-analytic
     svd:
-      n_singular_values: 3000
+      n_singular_values: 2000
     sky:
       freq_index: 0
     output:
@@ -316,7 +323,7 @@ runs:
       - torres-csa2022-dip
       - torres-mono-analytic
     svd:
-      n_singular_values: 3000
+      n_singular_values: 2000
     sky:
       freq_indices: all  # 101 freqs, 25-125 MHz
 
@@ -334,7 +341,7 @@ runs:
       - torres-csa2022-dip
       - torres-mono-analytic
     svd:
-      n_singular_values: 3000
+      n_singular_values: 2000
     sky:
       freq_indices: all  # 86 freqs, 40-125 MHz (limited by lake beam)
       freq_range: [40, 126]

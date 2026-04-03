@@ -19,15 +19,55 @@ from .alm import (  # noqa: F401
 )
 
 
+def normalize_beam_alm(beam_alm, beam, ground_loss=True):
+    """Normalize beam alm by the beam solid angle.
+
+    Must be called before using the beam alm in the forward model
+    so that the convolution directly gives antenna temperature.
+
+    Parameters
+    ----------
+    beam_alm : jax.Array
+        Equatorial beam alm, shape ``(nfreq, L, 2L-1)``.
+    beam : Beam
+        The beam object (needed for ``compute_norm``).
+    ground_loss : bool
+        If *True* (default), normalize by the full-sphere beam
+        integral.  The forward model then returns the sky
+        contribution to antenna temperature, with ground loss
+        implicit — this matches raw (uncorrected) data from
+        ``simulate_waterfall`` and croissant's ``Simulator.sim``.
+
+        If *False*, normalize by the above-horizon beam integral
+        only.  The forward model then returns ground-loss-corrected
+        sky temperature — use this when the data has already been
+        corrected for ground loss.
+
+    Returns
+    -------
+    beam_alm_norm : same type as *beam_alm*
+
+    """
+    if ground_loss:
+        norm = beam.compute_norm()
+    else:
+        norm = beam._compute_norm(use_horizon=True)
+    return beam_alm / norm[:, None, None]
+
+
 def _forward_single_freq(x, beam_alm_f, phases):
     """Forward for one frequency, one site.
+
+    The beam alm must be pre-normalized by the full-sphere beam
+    integral (``beam.compute_norm()``) so that the convolution
+    directly gives antenna temperature with ground loss.
 
     Parameters
     ----------
     x : jax.Array
         Packed real alm, shape ``(nalm,)``.
     beam_alm_f : jax.Array
-        Beam alm for one frequency, shape ``(L, 2L-1)``.
+        Normalized beam alm for one frequency, shape ``(L, 2L-1)``.
     phases : jax.Array
         Rotation phases, shape ``(ntimes, 2L-1)``.
 
@@ -40,8 +80,7 @@ def _forward_single_freq(x, beam_alm_f, phases):
     lmax = beam_alm_f.shape[0] - 1
     sky_alm = _unpack_single_freq(x, lmax)
     wf = cro.simulator.convolve(beam_alm_f[None], sky_alm[None], phases)
-    norm = beam_alm_f[0, lmax] * jnp.sqrt(4 * jnp.pi)
-    return (wf[:, 0] / norm).real
+    return wf[:, 0].real
 
 
 @jax.jit
@@ -77,11 +116,8 @@ def _forward_jax(x, beam_alm, phases):
     lmax = cro.utils.lmax_from_shape(beam_alm.shape)
     sky_alm = unpack_real_to_s2fft(x, lmax, Nfreq=nfreq)
 
-    # convolve with croissant
+    # beam_alm is pre-normalized by the full-sphere beam integral
     wf = cro.simulator.convolve(beam_alm, sky_alm, phases)
-    # beam_alm is already horizon masked so norm is above horizon only
-    beam_norm = beam_alm[:, 0, lmax] * jnp.sqrt(4 * jnp.pi)
-    wf /= beam_norm[None, :]
     y = wf.ravel()[:, None]
     return y
 
@@ -149,15 +185,18 @@ def stack_As(*A_list):
     )
 
 
-def make_Amat(sim):
+def make_Amat(sim, ground_loss=True):
     """
     Make the A matrix for mapmaking. This is a sparse matrix that
     encodes the beam at different times.
 
     Parameters
     ----------
-    sim: Simualtor
+    sim : Simulator
         Instance specifying the simulation parameters.
+    ground_loss : bool
+        Beam normalization convention, forwarded to
+        :func:`normalize_beam_alm`.
 
     Returns
     -------
@@ -167,6 +206,7 @@ def make_Amat(sim):
     """
     beam_alm = sim.compute_beam_eq()
     beam_alm = cro.utils.reduce_lmax(beam_alm, sim.lmax)
+    beam_alm = normalize_beam_alm(beam_alm, sim.beam, ground_loss)
     phases = sim.phases
 
     nalm = (sim.lmax + 1) ** 2
@@ -277,7 +317,7 @@ def make_Atilde(Ndiag, Amat, Sdiag):
 # ------------------------------------------------------------------
 
 
-def make_operators_jax(sim):
+def make_operators_jax(sim, ground_loss=True):
     """Build pure JAX forward/adjoint operators.
 
     Unlike :func:`make_Amat` (which wraps JAX inside a scipy
@@ -288,6 +328,9 @@ def make_operators_jax(sim):
     ----------
     sim : Simulator
         Simulation parameters.
+    ground_loss : bool
+        Beam normalization convention, forwarded to
+        :func:`normalize_beam_alm`.
 
     Returns
     -------
@@ -300,6 +343,7 @@ def make_operators_jax(sim):
     """
     beam_alm = sim.compute_beam_eq()
     beam_alm = cro.utils.reduce_lmax(beam_alm, sim.lmax)
+    beam_alm = normalize_beam_alm(beam_alm, sim.beam, ground_loss)
     phases = sim.phases
 
     nalm = (sim.lmax + 1) ** 2

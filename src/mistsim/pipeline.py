@@ -319,9 +319,7 @@ def setup_sky_multi_freq(config):
     # Truth at mapmaking lmax
     sky_alm = cro.utils.reduce_lmax(sky_alm_full, lmax)
     nalm = (lmax + 1) ** 2
-    x_packed_flat = np.asarray(
-        mapmaking.pack_s2fft_to_real(sky_alm)
-    )
+    x_packed_flat = np.asarray(mapmaking.pack_s2fft_to_real(sky_alm))
     x_packed_all = x_packed_flat.reshape(nfreq, nalm)
     x_hp_list = [
         np.asarray(mapmaking.alm1d_to_hp(x_packed_all[i]))
@@ -330,9 +328,7 @@ def setup_sky_multi_freq(config):
 
     # Sky at forward-model resolution
     if lmax_sim > lmax:
-        sky_alm_sim = cro.utils.reduce_lmax(
-            sky_alm_full, lmax_sim
-        )
+        sky_alm_sim = cro.utils.reduce_lmax(sky_alm_full, lmax_sim)
     else:
         sky_alm_sim = sky_alm
 
@@ -515,8 +511,9 @@ def build_stacked_A(config, sky, times_jd, sim_freq, freq_ix=None):
             alt=site.get("alt", 0),
             lmax=lmax,
         )
+        ground_loss = config.get("observation", {}).get("ground_loss", True)
         logger.info("Building A-matrix for %s", site["name"])
-        A_list.append(mapmaking.make_Amat(sim))
+        A_list.append(mapmaking.make_Amat(sim, ground_loss))
 
     if len(A_list) == 1:
         return A_list[0]
@@ -555,7 +552,8 @@ def build_stacked_A_jax(config, sky, times_jd, sim_freq, freq_ix=None):
             "Building JAX operator for %s",
             site["name"],
         )
-        op_list.append(mapmaking.make_operators_jax(sim))
+        ground_loss = config.get("observation", {}).get("ground_loss", True)
+        op_list.append(mapmaking.make_operators_jax(sim, ground_loss))
 
     if len(op_list) == 1:
         return op_list[0]
@@ -1118,7 +1116,12 @@ def posterior_uncertainty(
 
 
 def _prepare_freq_data(
-    config, times, freqs, y=None, x_packed=None, x_hp=None,
+    config,
+    times,
+    freqs,
+    y=None,
+    x_packed=None,
+    x_hp=None,
     beam_alms_eq=None,
 ):
     """Build per-frequency arrays for the ``lax.map`` solve.
@@ -1134,6 +1137,7 @@ def _prepare_freq_data(
     nfreq = len(freq_indices)
     obs_cfg = config["observation"]
     lmax = obs_cfg["lmax"]
+    ground_loss = config.get("observation", {}).get("ground_loss", True)
     sky_cfg = config["sky"]
     freqs_arr = np.arange(*sky_cfg["freq_range"])
     sim_freqs_arr = freqs_arr[np.array(freq_indices)]
@@ -1208,20 +1212,33 @@ def _prepare_freq_data(
                 logger.warning(
                     "Cached beam_alm lmax=%d < mapmaking "
                     "lmax=%d for %s, recomputing",
-                    cached_lmax, lmax, site["name"],
+                    cached_lmax,
+                    lmax,
+                    site["name"],
                 )
                 ba = sim.compute_beam_eq()
                 ba = cro.utils.reduce_lmax(ba, lmax)
+                ba = mapmaking.normalize_beam_alm(
+                    ba,
+                    beam,
+                    ground_loss,
+                )
             else:
                 ba = cro.utils.reduce_lmax(cached, lmax)
                 logger.info(
-                    "Using cached beam alm for %s "
-                    "(lmax %d -> %d)",
-                    site["name"], cached_lmax, lmax,
+                    "Using cached beam alm for %s (lmax %d -> %d)",
+                    site["name"],
+                    cached_lmax,
+                    lmax,
                 )
         else:
             ba = sim.compute_beam_eq()
             ba = cro.utils.reduce_lmax(ba, lmax)
+            ba = mapmaking.normalize_beam_alm(
+                ba,
+                beam,
+                ground_loss,
+            )
             logger.info(
                 "Beam SHT done for site %s (%d freqs)",
                 site["name"],
@@ -1578,9 +1595,7 @@ def simulate_waterfall(beam_cfg, sky_data):
     lmax_sim = sky_data["lmax_sim"]
     times = sky_data["times"]
 
-    beam = _build_multi_freq_beam(
-        beam_cfg, sim_freqs, freqs, freq_indices
-    )
+    beam = _build_multi_freq_beam(beam_cfg, sim_freqs, freqs, freq_indices)
     sim = Simulator(
         beam,
         sky,
@@ -1591,12 +1606,10 @@ def simulate_waterfall(beam_cfg, sky_data):
         alt=beam_cfg.get("alt", 0),
         lmax=lmax_sim,
     )
-    beam_alm = cro.utils.reduce_lmax(
-        sim.compute_beam_eq(), lmax_sim
-    )
+    beam_alm = cro.utils.reduce_lmax(sim.compute_beam_eq(), lmax_sim)
+    beam_alm = mapmaking.normalize_beam_alm(beam_alm, beam)
 
     wf = cro.simulator.convolve(beam_alm, sky_alm_sim, sim.phases)
-    wf /= beam.compute_norm()[None, :]
     y = np.asarray(wf.real.T)  # (nfreq, ntimes)
 
     logger.info(
@@ -1762,7 +1775,10 @@ def _solve_single_freq(config, y, x_packed, x_hp, freqs):
 
 
 def _solve_multi_freq(
-    config, y=None, x_packed=None, x_hp=None,
+    config,
+    y=None,
+    x_packed=None,
+    x_hp=None,
     beam_alms_eq=None,
 ):
     """Multi-frequency mapmaking solver.
@@ -2041,29 +2057,25 @@ def load_and_concat_sim_data(paths, freq_range=None):
     for b in beams[1:]:
         target_freqs = np.intersect1d(target_freqs, b["freqs"])
     if freq_range is not None:
-        mask = (target_freqs >= freq_range[0]) & (
-            target_freqs < freq_range[1]
-        )
+        mask = (target_freqs >= freq_range[0]) & (target_freqs < freq_range[1])
         target_freqs = target_freqs[mask]
 
     # Select and concatenate y for each beam
     y_parts = []
     for b in beams:
         # Find indices of target_freqs in this beam's freqs
-        idx = np.array([
-            int(np.where(b["freqs"] == f)[0][0])
-            for f in target_freqs
-        ])
+        idx = np.array(
+            [int(np.where(b["freqs"] == f)[0][0]) for f in target_freqs]
+        )
         y_parts.append(b["y"][idx])
     # y_parts[i] shape: (nfreq, ntimes)
     # Concatenate along time axis
     y = np.concatenate(y_parts, axis=1)
 
     # Sky truth from first beam (same for all)
-    ref_idx = np.array([
-        int(np.where(ref["freqs"] == f)[0][0])
-        for f in target_freqs
-    ])
+    ref_idx = np.array(
+        [int(np.where(ref["freqs"] == f)[0][0]) for f in target_freqs]
+    )
     x_packed = ref["x_packed"][ref_idx]
     x_hp = ref["x_hp"][ref_idx]
 
@@ -2081,10 +2093,9 @@ def load_and_concat_sim_data(paths, freq_range=None):
     if all("beam_alm_eq" in b for b in beams):
         beam_alms_eq = []
         for b in beams:
-            idx = np.array([
-                int(np.where(b["freqs"] == f)[0][0])
-                for f in target_freqs
-            ])
+            idx = np.array(
+                [int(np.where(b["freqs"] == f)[0][0]) for f in target_freqs]
+            )
             beam_alms_eq.append(b["beam_alm_eq"][idx])
 
     result = {
@@ -2102,7 +2113,10 @@ def load_and_concat_sim_data(paths, freq_range=None):
 
 
 def run_mapmaking(
-    config, y, x_true=None, x_packed=None,
+    config,
+    y,
+    x_true=None,
+    x_packed=None,
     beam_alms_eq=None,
 ):
     """Stage 2: Mapmaking from data.
@@ -2147,7 +2161,10 @@ def run_mapmaking(
             x_true = x_true[fi]
         return _solve_single_freq(config, y, x_packed, x_true, freqs)
     return _solve_multi_freq(
-        config, y=y, x_packed=x_packed, x_hp=x_true,
+        config,
+        y=y,
+        x_packed=x_packed,
+        x_hp=x_true,
         beam_alms_eq=beam_alms_eq,
     )
 

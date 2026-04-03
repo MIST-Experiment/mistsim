@@ -63,13 +63,13 @@ def test_forward(sim):
 
     beam_alm = sim.compute_beam_eq()
     beam_alm = cro.utils.reduce_lmax(beam_alm, lmax)
+    beam_alm = beam_alm / sim.beam.compute_norm()[:, None, None]
     phases = sim.phases
 
-    expected_raw = sim.sim()
-    # need to ground loss correct since mapmaker assumes it's done
-    expected = cro.simulator.correct_ground_loss(
-        expected_raw, sim.beam.compute_fgnd(), sim.Tgnd
-    )
+    # Forward model gives the sky contribution to antenna
+    # temperature (vis_sky), normalized by the full-sphere
+    # beam integral.
+    expected = sim.sim() - sim.compute_ground_contribution()
 
     # out is a column vector of shape (ntimes*nfreq, 1)
     out = ms.mapmaking._forward(x_real, beam_alm, phases)
@@ -89,14 +89,12 @@ def test_A(sim):
 
     A_wfall_rav = Amat @ x_real
     A_wfall = A_wfall_rav.reshape(ntimes, nfreq)
-    # compare with simulator
-    sim_wfall = sim.sim()
-    # matrix approach does not try to capture ground loss
-    fgnd = sim.beam.compute_fgnd()
-    sim_wfall = cro.simulator.correct_ground_loss(sim_wfall, fgnd, sim.Tgnd)
+    # A-matrix gives vis_sky (sky contribution to antenna
+    # temperature), normalized by the full-sphere beam integral.
+    vis_sky = sim.sim() - sim.compute_ground_contribution()
 
-    assert A_wfall.shape == sim_wfall.shape
-    assert jnp.allclose(A_wfall, sim_wfall)
+    assert A_wfall.shape == vis_sky.shape
+    assert jnp.allclose(A_wfall, vis_sky)
 
 
 def test_Alinear(sim):
@@ -472,6 +470,7 @@ def test_forward_single_freq(sim):
 
     beam_alm = sim.compute_beam_eq()
     beam_alm = cro.utils.reduce_lmax(beam_alm, lmax)
+    beam_alm = beam_alm / sim.beam.compute_norm()[:, None, None]
     phases = sim.phases
 
     # Full multi-frequency forward over all frequencies
