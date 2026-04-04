@@ -81,9 +81,7 @@ defaults:
   sky:
     haslam_file: "../../../data/haslam_galactic_mwss.npz"
     spectral_index: -2.55
-    freq_range: [25, 126]
-    freq_index: 15  # single-freq default: 40 MHz (index into 25-125 array)
-    # freq_indices: all  # or list like [0, 25, 50, 75, 100]
+    freqs: [40]  # single-freq default: 40 MHz
 
   observation:
     start_time: "2026-02-25 12:27"
@@ -155,8 +153,6 @@ runs:
       - mars-csa2022-dip
       - mars-mono-analytic
       - mars-lake-dip
-    sky:
-      freq_range: [40, 126]
     svd:
       n_singular_values: 1500
     output:
@@ -171,8 +167,6 @@ runs:
       - nv-dip
       - nv-mono-analytic
       - mars-lake-dip
-    sky:
-      freq_range: [40, 126]
     svd:
       n_singular_values: 2000
     output:
@@ -189,8 +183,6 @@ runs:
       - mars-lake-dip
       - alma-csa2022-dip
       - alma-mono-analytic
-    sky:
-      freq_range: [40, 126]
     svd:
       n_singular_values: 2000
     output:
@@ -222,8 +214,6 @@ runs:
       - alma-mono-analytic
       - torres-csa2022-dip
       - torres-mono-analytic
-    sky:
-      freq_range: [40, 126]
     svd:
       n_singular_values: 2000
     output:
@@ -238,7 +228,7 @@ runs:
       - mars-csa2022-dip
       - mars-mono-analytic
     sky:
-      freq_index: 0
+      freqs: [25]
     output:
       results_dir: "../results/25mhz"
       notebooks_dir: "../notebooks_out/25mhz"
@@ -253,7 +243,7 @@ runs:
     svd:
       n_singular_values: 2000
     sky:
-      freq_index: 0
+      freqs: [25]
     output:
       results_dir: "../results/25mhz"
       notebooks_dir: "../notebooks_out/25mhz"
@@ -270,7 +260,7 @@ runs:
     svd:
       n_singular_values: 2000
     sky:
-      freq_index: 0
+      freqs: [25]
     output:
       results_dir: "../results/25mhz"
       notebooks_dir: "../notebooks_out/25mhz"
@@ -285,7 +275,7 @@ runs:
     svd:
       n_singular_values: 1200
     sky:
-      freq_index: 0
+      freqs: [25]
     output:
       results_dir: "../results/25mhz"
       notebooks_dir: "../notebooks_out/25mhz"
@@ -304,7 +294,7 @@ runs:
     svd:
       n_singular_values: 2000
     sky:
-      freq_index: 0
+      freqs: [25]
     output:
       results_dir: "../results/25mhz"
       notebooks_dir: "../notebooks_out/25mhz"
@@ -325,7 +315,7 @@ runs:
     svd:
       n_singular_values: 2000
     sky:
-      freq_indices: all  # 101 freqs, 25-125 MHz
+      freqs: "25:126"  # 101 freqs, 25-125 MHz
 
   # With lake beam — restricted to 40-125 MHz (lake beam range)
   all-nominal-multifreq-lake:
@@ -343,8 +333,7 @@ runs:
     svd:
       n_singular_values: 2000
     sky:
-      freq_indices: all  # 86 freqs, 40-125 MHz (limited by lake beam)
-      freq_range: [40, 126]
+      freqs: "40:126"  # 86 freqs, 40-125 MHz (limited by lake beam)
 
   # === lmax convergence test (MARS only) ===
 
@@ -356,7 +345,7 @@ runs:
     svd:
       n_singular_values: 800
     sky:
-      freq_index: 0
+      freqs: [25]
 
   mars-lmax60:
     run_name: mars-lmax60
@@ -366,7 +355,7 @@ runs:
     svd:
       n_singular_values: 800
     sky:
-      freq_index: 0
+      freqs: [25]
 
   mars-lmax90:
     run_name: mars-lmax90
@@ -376,7 +365,7 @@ runs:
     svd:
       n_singular_values: 800
     sky:
-      freq_index: 0
+      freqs: [25]
 
   mars-lmax179:
     run_name: mars-lmax179
@@ -386,4 +375,4 @@ runs:
     svd:
       n_singular_values: 800
     sky:
-      freq_index: 0
+      freqs: [25]

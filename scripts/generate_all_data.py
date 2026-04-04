@@ -27,9 +27,9 @@ os.environ.setdefault("JAX_ENABLE_X64", "True")
 
 from mistsim.pipeline import (
     _resolve_config_paths,
-    simulate_waterfall,
     save_sim_data,
     setup_sky_multi_freq,
+    simulate_waterfall,
 )
 
 logging.basicConfig(
@@ -45,12 +45,14 @@ DEFAULT_RUNS = (
 )
 
 
-def _beam_freq_range(beam_def, sites_defs, config_dir, default_range):
+def _beam_freq_range(beam_def, config_dir, default_range):
     """Determine the frequency range a beam supports.
 
     For analytic beams (sin2), returns the full default range.
     For file-based beams, reads the beam NPZ to find the
     intersection with the default range.
+
+    Returns [f_min, f_max) as a list.
     """
     beam_type = beam_def.get("beam_type", "file")
     if beam_type != "file":
@@ -105,12 +107,11 @@ def main():
     with open(config_path) as f:
         registry = yaml.safe_load(f)
 
-    sites_defs = registry["sites"]
     beams_defs = registry["beams"]
     defaults = registry.get("defaults", {})
-    default_freq_range = defaults.get("sky", {}).get(
-        "freq_range", [25, 126]
-    )
+    # Default freqs from config (e.g. [40] for single-freq)
+    # For data generation we need the full range the beams cover.
+    default_freq_range = [25, 126]
 
     # Which beams to generate
     beam_names = args.beams or list(beams_defs.keys())
@@ -136,7 +137,7 @@ def main():
         beam_def = dict(beams_defs[name])
         fr = tuple(
             _beam_freq_range(
-                beam_def, sites_defs, config_dir, default_freq_range
+                beam_def, config_dir, default_freq_range
             )
         )
         range_to_beams.setdefault(fr, []).append(name)
@@ -154,8 +155,7 @@ def main():
         cfg = {}
         for key, val in defaults.items():
             cfg[key] = dict(val)
-        cfg["sky"]["freq_range"] = list(freq_range)
-        cfg["sky"]["freq_indices"] = "all"
+        cfg["sky"]["freqs"] = f"{freq_range[0]}:{freq_range[1]}"
         cfg.setdefault("sites", [])
         _resolve_config_paths(cfg, config_dir)
 
@@ -171,7 +171,7 @@ def main():
 
             beam_def = dict(beams_defs[name])
             site_key = beam_def.pop("site")
-            site_def = dict(sites_defs[site_key])
+            site_def = dict(registry["sites"][site_key])
             beam_cfg = {"name": name, **site_def, **beam_def}
 
             # Resolve beam_file path

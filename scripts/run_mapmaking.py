@@ -79,13 +79,13 @@ def main():
         ),
     )
     parser.add_argument(
-        "--freq-indices",
+        "--freqs",
         type=int,
         nargs="+",
         default=None,
         help=(
-            "Override freq_indices in the config. Useful for "
-            "batched multi-freq runs."
+            "Override freqs in the config (MHz values). "
+            "Useful for batched multi-freq runs."
         ),
     )
     args = parser.parse_args()
@@ -93,10 +93,8 @@ def main():
     config = load_config(args.config, args.run)
 
     # Apply CLI overrides
-    if args.freq_indices is not None:
-        config.setdefault("sky", {})["freq_indices"] = (
-            args.freq_indices
-        )
+    if args.freqs is not None:
+        config.setdefault("sky", {})["freqs"] = args.freqs
     if args.n_singular_values is not None:
         config.setdefault("svd", {})["n_singular_values"] = (
             args.n_singular_values
@@ -113,8 +111,9 @@ def main():
                     f"Missing beam data: {p}. "
                     f"Run generate_all_data.py first."
                 )
-        freq_range = config.get("sky", {}).get("freq_range")
-        data = load_and_concat_sim_data(paths, freq_range)
+        from mistsim.pipeline import _parse_freqs
+        target = _parse_freqs(config)
+        data = load_and_concat_sim_data(paths, target)
     else:
         data = generate_data(config)
 

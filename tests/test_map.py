@@ -426,32 +426,29 @@ def test_randomized_svd():
 # ------------------------------------------------------------------
 
 
-def test_resolve_freq_indices_single():
-    """freq_index (singular) → single-element list."""
-    cfg = {"sky": {"freq_index": 3, "freq_range": [25, 126]}}
-    ix = pipeline._resolve_freq_indices(cfg)
-    assert ix == [3]
+def test_parse_freqs_list():
+    """List of MHz values returned as-is."""
+    cfg = {"sky": {"freqs": [40]}}
+    assert pipeline._parse_freqs(cfg) == [40]
 
 
-def test_resolve_freq_indices_multi():
-    """freq_indices (plural) → list."""
-    cfg = {"sky": {"freq_indices": [0, 5, 10], "freq_range": [25, 126]}}
-    ix = pipeline._resolve_freq_indices(cfg)
-    assert ix == [0, 5, 10]
+def test_parse_freqs_multi():
+    """Multi-element list."""
+    cfg = {"sky": {"freqs": [25, 50, 75]}}
+    assert pipeline._parse_freqs(cfg) == [25, 50, 75]
 
 
-def test_resolve_freq_indices_all():
-    """freq_indices: "all" → all frequencies."""
-    cfg = {"sky": {"freq_indices": "all", "freq_range": [25, 30]}}
-    ix = pipeline._resolve_freq_indices(cfg)
-    assert ix == [0, 1, 2, 3, 4]
+def test_parse_freqs_range_string():
+    """Range string expanded to integer list."""
+    cfg = {"sky": {"freqs": "25:30"}}
+    assert pipeline._parse_freqs(cfg) == [25, 26, 27, 28, 29]
 
 
-def test_resolve_freq_indices_default():
-    """Neither key → all frequencies."""
-    cfg = {"sky": {"freq_range": [25, 30]}}
-    ix = pipeline._resolve_freq_indices(cfg)
-    assert ix == [0, 1, 2, 3, 4]
+def test_parse_freqs_invalid_string():
+    """Invalid range string raises ValueError."""
+    cfg = {"sky": {"freqs": "bad"}}
+    with pytest.raises(ValueError, match="Invalid freq range"):
+        pipeline._parse_freqs(cfg)
 
 
 def test_pad_and_stack():
@@ -460,6 +457,30 @@ def test_pad_and_stack():
     result = pipeline._pad_and_stack(arrays)
     expected = np.array([[1, 2, 3], [4, 5, 0]])
     np.testing.assert_array_equal(result, expected)
+
+
+def test_run_mapmaking_squeezes_single_freq(monkeypatch):
+    """run_mapmaking squeezes 2-D arrays to 1-D for single freq."""
+    captured = {}
+
+    def fake_solve(config, y, x_packed, x_true):
+        captured["y"] = y
+        captured["x_packed"] = x_packed
+        captured["x_true"] = x_true
+        return {}
+
+    monkeypatch.setattr(pipeline, "_solve_single_freq", fake_solve)
+
+    cfg = {"sky": {"freqs": [40]}}
+    y = np.ones((1, 100))
+    x_packed = np.ones((1, 50))
+    x_true = np.ones((1, 50))
+
+    pipeline.run_mapmaking(cfg, y, x_true=x_true, x_packed=x_packed)
+
+    assert captured["y"].ndim == 1, "y should be squeezed to 1-D"
+    assert captured["x_packed"].ndim == 1
+    assert captured["x_true"].ndim == 1
 
 
 def test_forward_single_freq(sim):

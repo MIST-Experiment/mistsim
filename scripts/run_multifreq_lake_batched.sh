@@ -7,7 +7,8 @@ set -e
 cd "$(dirname "$0")/.."
 
 BATCH_SIZE=21
-TOTAL=86  # indices 0..85 (40-125 MHz)
+FREQ_START=40
+FREQ_END=125  # inclusive
 RUN=all-nominal-multifreq-lake
 DATA_DIR="${1:-data/synthetic_data}"
 RESULTS_DIR=notebooks/mapmaking/results
@@ -15,18 +16,18 @@ RESULTS_DIR=notebooks/mapmaking/results
 mkdir -p "$RESULTS_DIR"
 
 batch=0
-for start in $(seq 0 $BATCH_SIZE $((TOTAL - 1))); do
+for start in $(seq $FREQ_START $BATCH_SIZE $FREQ_END); do
     end=$((start + BATCH_SIZE - 1))
-    if [ $end -ge $TOTAL ]; then
-        end=$((TOTAL - 1))
+    if [ $end -gt $FREQ_END ]; then
+        end=$FREQ_END
     fi
 
-    indices=$(seq $start $end)
-    echo "=== Batch $batch: freq indices $start..$end ==="
+    freqs=$(seq $start $end)
+    echo "=== Batch $batch: ${start}-${end} MHz ==="
 
     uv run python scripts/run_mapmaking.py "$RUN" \
         --data-dir "$DATA_DIR" \
-        --freq-indices $indices \
+        --freqs $freqs \
         --no-notebook \
         --output-dir "$RESULTS_DIR"
 
