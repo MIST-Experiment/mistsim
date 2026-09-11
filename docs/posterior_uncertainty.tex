@@ -1,0 +1,539 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+\PassOptionsToPackage{dvipsnames,svgnames,x11names}{xcolor}
+%
+\documentclass[
+  11pt,
+]{article}
+\usepackage{amsmath,amssymb}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\usepackage[margin=1in]{geometry}
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\usepackage{framed}
+\definecolor{shadecolor}{RGB}{248,248,248}
+\newenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{0.94,0.16,0.16}{#1}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\BuiltInTok}[1]{#1}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{0.64,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\ImportTok}[1]{#1}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.81,0.36,0.00}{\textbf{#1}}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.81,0.36,0.00}{\textbf{#1}}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\usepackage{longtable,booktabs,array}
+\usepackage{calc} % for calculating minipage widths
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\ifLuaTeX
+  \usepackage{selnolig}  % disable illegal ligatures
+\fi
+\IfFileExists{bookmark.sty}{\usepackage{bookmark}}{\usepackage{hyperref}}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  pdftitle={Posterior Uncertainty in the Whitened SVD Basis},
+  pdfauthor={Christian Hellum Bye},
+  colorlinks=true,
+  linkcolor={NavyBlue},
+  filecolor={Maroon},
+  citecolor={Blue},
+  urlcolor={NavyBlue},
+  pdfcreator={LaTeX via pandoc}}
+
+\title{Posterior Uncertainty in the Whitened SVD Basis}
+\usepackage{etoolbox}
+\makeatletter
+\providecommand{\subtitle}[1]{% add subtitle to \maketitle
+  \apptocmd{\@title}{\par {\large #1 \par}}{}{}
+}
+\makeatother
+\subtitle{mistsim map-making: from the SVD of \(\tilde{A}\) to
+\(\sigma^2_{\rm post}/\sigma^2_{\rm prior}\)}
+\author{Christian Hellum Bye}
+\date{11 September 2026}
+
+\begin{document}
+\maketitle
+
+{
+\hypersetup{linkcolor=}
+\setcounter{tocdepth}{2}
+\tableofcontents
+}
+How \texttt{mistsim} turns an SVD of the whitened design matrix into a
+posterior standard-deviation map, and what the
+\(\sigma^2_{\rm post}/\sigma^2_{\rm prior}\) plots actually show.
+
+\textbf{Code:}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule\noalign{}
+Piece & Location \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Whitened design matrix \(\tilde{A}\) &
+\texttt{src/mistsim/mapmaking.py:281} (\texttt{make\_Atilde}) \\
+Prior diagonal \(S\) & \texttt{src/mistsim/pipeline.py:565}
+(\texttt{compute\_prior}) \\
+Truncated SVD & \texttt{src/mistsim/pipeline.py:588}
+(\texttt{run\_svd}) \\
+Mode selection & \texttt{src/mistsim/pipeline.py:604}
+(\texttt{select\_nvec}) \\
+Wiener mean & \texttt{src/mistsim/pipeline.py:749}
+(\texttt{wiener\_filter}) \\
+Posterior sampling & \texttt{src/mistsim/pipeline.py:1026}
+(\texttt{posterior\_uncertainty}) \\
+Plotting & \texttt{src/mistsim/plotting.py:949}
+(\texttt{plot\_posterior\_maps}) \\
+\end{longtable}
+
+Rendered examples live in \texttt{notebooks/mapmaking/notebooks\_out/}
+(cell 21 of each executed notebook).
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{1-the-model}{%
+\subsection{1. The model}\label{1-the-model}}
+
+The forward problem is
+
+\[ y = A x + n \]
+
+where \(x\) is the packed real spherical-harmonic vector, \(A\) the
+beam-convolution / drift-scan operator (\texttt{make\_Amat},
+\texttt{mapmaking.py:188}), \(y\) the simulated timestream, and \(n\)
+the radiometer noise.
+
+Two Gaussian ingredients close the problem:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Noise:} \(n \sim \mathcal{N}(0, N)\) with
+  \(N = \mathrm{diag}(\texttt{Ndiag})\), one variance per (time,
+  frequency) sample.
+\item
+  \textbf{Prior:} \(x \sim \mathcal{N}(0, S)\) with
+  \(S = \mathrm{diag}(\texttt{Sdiag})\), where
+  \texttt{Sdiag\ =\ cl{[}ells\_full{]}} --- the sky power spectrum
+  evaluated at each coefficient\textquotesingle s \(\ell\).
+\end{itemize}
+
+\hypertarget{why-the-prior-is-exactly-diagonal}{%
+\subsubsection{Why the prior is exactly
+diagonal}\label{why-the-prior-is-exactly-diagonal}}
+
+\texttt{compute\_prior} assigns \(C_\ell\) to \emph{every} real degree
+of freedom, including the real and imaginary parts of \(m > 0\)
+separately:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{ells\_pos  }\OperatorTok{=}\NormalTok{ ells\_hp[emms\_hp }\OperatorTok{!=} \DecValTok{0}\NormalTok{]}
+\NormalTok{ells\_full }\OperatorTok{=}\NormalTok{ np.concatenate((ells\_hp, ells\_pos))}
+\ControlFlowTok{return}\NormalTok{ cl[ells\_full]}
+\end{Highlighting}
+\end{Shaded}
+
+This is consistent because of the \(1/\sqrt{2}\) in the packing
+convention (\texttt{alm.py:122}):
+
+\[ a_{\ell m} = \tfrac{1}{\sqrt{2}}\left(a^{\rm re}_{\ell m} + i\,a^{\rm im}_{\ell m}\right) \]
+
+A complex coefficient with \(\langle |a_{\ell m}|^2 \rangle = C_\ell\)
+splits into two real d.o.f. each with variance \(C_\ell\). So in the
+packed basis the prior covariance really is diagonal with entries
+\(C_\ell\) --- no \(m\)-dependent bookkeeping, and the whitened prior
+below is exactly the identity.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{2-whitening}{%
+\subsection{2. Whitening}\label{2-whitening}}
+
+Define
+
+\[ \tilde{x} = S^{-1/2} x, \qquad \tilde{y} = N^{-1/2} y, \qquad \tilde{A} = N^{-1/2} A\, S^{1/2} \]
+
+so that
+
+\[ \tilde{y} = \tilde{A}\,\tilde{x} + \tilde{n}, \qquad \tilde{x} \sim \mathcal{N}(0, I), \quad \tilde{n} \sim \mathcal{N}(0, I). \]
+
+This is \texttt{make\_Atilde} (\texttt{mapmaking.py:281}), applied
+matrix-free:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{def}\NormalTok{ \_Atilde\_matvec(v, Ndiag, Amat, Sdiag):}
+\NormalTok{    Nm12 }\OperatorTok{=} \DecValTok{1} \OperatorTok{/}\NormalTok{ np.sqrt(Ndiag)}
+\NormalTok{    S12 }\OperatorTok{=}\NormalTok{ np.sqrt(Sdiag)}
+    \ControlFlowTok{return}\NormalTok{ Nm12 }\OperatorTok{*}\NormalTok{ Amat.matvec(S12 }\OperatorTok{*}\NormalTok{ v)}
+\end{Highlighting}
+\end{Shaded}
+
+and on the data side,
+\texttt{y\_tilde\ =\ Ndiag**(-0.5)\ *\ (y\ +\ noise)}
+(\texttt{pipeline.py:776}).
+
+\textbf{Why bother.} After whitening, the prior and the noise are the
+same object --- the identity. A single SVD of \(\tilde{A}\) therefore
+diagonalizes the entire posterior, and the singular values come out as
+pure dimensionless signal-to-noise numbers: \(\sigma_k\) is how well the
+data constrains mode \(k\) \emph{in units of its own prior width}.
+Nothing carries units, and no mode is privileged by an arbitrary choice
+of amplitude scale.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{3-the-posterior}{%
+\subsection{3. The posterior}\label{3-the-posterior}}
+
+With both covariances the identity,
+
+\[ -2 \ln p(\tilde{x} \mid \tilde{y}) = \lVert \tilde{y} - \tilde{A}\tilde{x} \rVert^2 + \lVert \tilde{x} \rVert^2 + \text{const} \]
+
+Both terms are quadratic, so the posterior is Gaussian:
+
+\[ C_{\rm post} = \left(\tilde{A}^{\mathsf H}\tilde{A} + I\right)^{-1}, \qquad \mu = C_{\rm post}\,\tilde{A}^{\mathsf H} \tilde{y} \]
+
+The \(+I\) \emph{is} the prior. Drop it and this is ordinary least
+squares, which is singular: the drift scan has exact null directions
+(modes the beam never sees), and those blow up.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{4-the-svd-diagonalizes-it}{%
+\subsection{4. The SVD diagonalizes
+it}\label{4-the-svd-diagonalizes-it}}
+
+Write \(\tilde{A} = U \Sigma V^{\mathsf H}\) (\texttt{run\_svd},
+\texttt{pipeline.py:588}, via \texttt{scipy.sparse.linalg.svds}). Then
+
+\[ \tilde{A}^{\mathsf H}\tilde{A} + I = V\left(\Sigma^2 + I\right)V^{\mathsf H} \quad\Longrightarrow\quad C_{\rm post} = V\left(\Sigma^2 + I\right)^{-1}V^{\mathsf H} \]
+
+The right singular vectors \(v_k\) are the principal axes of the
+posterior. Along \(v_k\):
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule\noalign{}
+& value \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+prior std (whitened) & \(1\) \\
+posterior std & \(1/\sqrt{\sigma_k^2 + 1}\) \\
+variance ratio & \(1/(\sigma_k^2 + 1)\) \\
+\end{longtable}
+
+In code (\texttt{pipeline.py:1052}):
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{post\_std\_svd }\OperatorTok{=} \FloatTok{1.0} \OperatorTok{/}\NormalTok{ np.sqrt(Dnum}\OperatorTok{**}\DecValTok{2} \OperatorTok{+} \FloatTok{1.0}\NormalTok{)}
+\NormalTok{std\_reduce }\OperatorTok{=} \DecValTok{1} \OperatorTok{{-}}\NormalTok{ post\_std\_svd}
+\end{Highlighting}
+\end{Shaded}
+
+The two limits are the whole story:
+
+\begin{itemize}
+\tightlist
+\item
+  \(\sigma_k \gg 1\) --- well-measured mode. Posterior std
+  \(\to 1/\sigma_k\), far tighter than the prior. The data dominates.
+\item
+  \(\sigma_k \ll 1\) --- unconstrained mode. Posterior std \(\to 1\):
+  the posterior hands back the prior unchanged, which is the correct and
+  honest answer for something the instrument never saw.
+\end{itemize}
+
+\texttt{std\_reduce} is the \emph{shrinkage} --- the fraction of the
+prior width that the data removes.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{5-sampling-a-low-rank-square-root}{%
+\subsection{5. Sampling: a low-rank square
+root}\label{5-sampling-a-low-rank-square-root}}
+
+\texttt{posterior\_uncertainty} draws from the posterior without ever
+forming \(C_{\rm post}\):
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{wfull }\OperatorTok{=}\NormalTok{ rng.normal(size}\OperatorTok{=}\NormalTok{(n\_alm, n\_realizations))}
+\NormalTok{corr }\OperatorTok{=}\NormalTok{ Vht.T }\OperatorTok{@}\NormalTok{ (std\_reduce[:, }\VariableTok{None}\NormalTok{] }\OperatorTok{*}\NormalTok{ (Vht }\OperatorTok{@}\NormalTok{ wfull))}
+\NormalTok{x\_tilde\_sim }\OperatorTok{=}\NormalTok{ wfull }\OperatorTok{{-}}\NormalTok{ corr}
+\end{Highlighting}
+\end{Shaded}
+
+Written out, with \(w \sim \mathcal{N}(0, I)\):
+
+\[ \tilde{x}_{\rm sim} = \Big[\,I - VV^{\mathsf H} + V\left(\Sigma^2+I\right)^{-1/2}V^{\mathsf H}\Big]\,w \]
+
+\textbf{This bracket is a symmetric square root of \(C_{\rm post}\).}
+The projector \(P = VV^{\mathsf H}\) and its complement \(I - P\) are
+orthogonal, so the two blocks square independently:
+
+\[ \Big[\,(I - P) + V(\Sigma^2+I)^{-1/2}V^{\mathsf H}\Big]^2 = (I-P) + V\left(\Sigma^2+I\right)^{-1}V^{\mathsf H} = C_{\rm post} \]
+
+so \(\tilde{x}_{\rm sim}\) is an exact posterior draw.
+
+Two things make this the right formulation:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \textbf{It never builds an \(n_{\rm alm} \times n_{\rm alm}\) matrix.}
+  Only \texttt{nvec} projections are computed, so cost is
+  \(O(n_{\rm alm}\cdot n_{\rm vec}\cdot n_{\rm real})\).
+\item
+  \textbf{It handles the unretained subspace for free.} Modes outside
+  \(V\) keep coefficient 1 --- full prior width --- which is exactly
+  right for genuine null modes.
+\end{enumerate}
+
+\texttt{V} is real here (real packed basis), so \texttt{Vht.T} is
+legitimately \(V^{\mathsf H}\).
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{6-truncation}{%
+\subsection{6. Truncation}\label{6-truncation}}
+
+\texttt{svds} is truncated at \(k\) modes and \texttt{select\_nvec}
+(\texttt{pipeline.py:604}) then keeps \texttt{nvec} of them. Three
+strategies:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{"threshold"} (default) --- keep \(\sigma_k > 10^{-10}\).
+  Safest: retains everything carrying measurable signal.
+\item
+  \texttt{"auto"} --- elbow of the singular-value curve in log space.
+\item
+  \texttt{"manual"} --- fixed count, with a warning if the mode at the
+  cut still has Wiener factor \(D > 0.01\).
+\end{itemize}
+
+Since dropped modes are implicitly assigned the prior width, truncation
+is exact for \(\sigma \to 0\) and a mild approximation for any mode cut
+while \(\sigma\) is not yet \(\ll 1\) --- it slightly \emph{over}-states
+the posterior variance there. That is the conservative direction, but it
+is the reason the \texttt{"manual"} path warns.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{7-back-to-the-sky}{%
+\subsection{7. Back to the sky}\label{7-back-to-the-sky}}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{x\_sim     }\OperatorTok{=}\NormalTok{ np.sqrt(Sdiag)[:, }\VariableTok{None}\NormalTok{] }\OperatorTok{*}\NormalTok{ x\_tilde\_sim   }\CommentTok{\# un{-}whiten}
+\NormalTok{x\_sim\_hp  }\OperatorTok{=}\NormalTok{ [alm1d\_to\_hp(col) }\ControlFlowTok{for}\NormalTok{ col }\KeywordTok{in}\NormalTok{ x\_sim.T]   }\CommentTok{\# packed {-}\textgreater{} healpy}
+\NormalTok{x\_sim\_map }\OperatorTok{=}\NormalTok{ [hp.alm2map(xs, nside) }\ControlFlowTok{for}\NormalTok{ xs }\KeywordTok{in}\NormalTok{ x\_sim\_hp]}
+\NormalTok{std\_map   }\OperatorTok{=}\NormalTok{ np.std(x\_sim\_map, axis}\OperatorTok{=}\DecValTok{0}\NormalTok{)               }\CommentTok{\# posterior sigma per pixel}
+\end{Highlighting}
+\end{Shaded}
+
+Un-whitening restores the \(C_\ell\) scaling, and \texttt{alm2map}
+rotates into pixel space --- where the covariance is emphatically
+\emph{not} diagonal. This is the real payoff of the Monte Carlo: the
+pixel-space diagonal falls out of the sample scatter, instead of
+requiring a dense covariance to be transformed by \(Y_{\ell m}\).
+
+The denominator is the per-pixel variance of a Gaussian random field
+with spectrum \(C_\ell\) (\texttt{pipeline.py:1077}):
+
+\[ \sigma^2_{\rm prior} = \sum_\ell \frac{2\ell+1}{4\pi} C_\ell \]
+
+A single scalar, because the prior is statistically isotropic. So the
+plotted map
+
+\[ \frac{\sigma^2_{\rm post}(\hat{n})}{\sigma^2_{\rm prior}} = \frac{\texttt{std\_map}^2}{\texttt{sigma2\_prior}} \]
+
+is the \textbf{fraction of prior variance surviving in each pixel}: 0
+means fully determined by the data, 1 means the data said nothing there.
+
+Its structure is purely instrumental. In the 40 MHz \texttt{all-nominal}
+run the ratio spans \(\approx 0.13\) in the Galactic plane to
+\(\approx 0.32\) near the poles --- pixels the drift scan weights
+heavily project onto high-\(\sigma_k\) modes and shrink the most.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{8-relation-to-the-wiener-filter-factors}{%
+\subsection{8. Relation to the Wiener filter
+factors}\label{8-relation-to-the-wiener-filter-factors}}
+
+\texttt{wiener\_filter} (\texttt{pipeline.py:771}) uses a
+\emph{different} factor for the posterior mean:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{Dnum }\OperatorTok{=}\NormalTok{ Sigma[:nvec]}
+\NormalTok{D }\OperatorTok{=}\NormalTok{ Dnum }\OperatorTok{/}\NormalTok{ (}\DecValTok{1} \OperatorTok{+}\NormalTok{ Dnum}\OperatorTok{**}\DecValTok{2}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+which comes from the same core with one extra \(\Sigma\), contributed by
+the \(\tilde{A}^{\mathsf H}\) acting on the data:
+
+\[ C_{\rm post}\tilde{A}^{\mathsf H} = V\left(\Sigma^2+I\right)^{-1}\Sigma\, U^{\mathsf H} \]
+
+\begin{longtable}[]{@{}llll@{}}
+\toprule\noalign{}
+Quantity & Factor & \(\sigma \gg 1\) & \(\sigma \ll 1\) \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Posterior std & \(1/\sqrt{\sigma^2+1}\) & \(\to 1/\sigma \to 0\) &
+\(\to 1\) (prior width) \\
+Wiener mean & \(\sigma/(1+\sigma^2)\) & \(\to 1/\sigma \to 0\) &
+\(\to \sigma \to 0\) \\
+\end{longtable}
+
+Both vanish for unmeasured modes, but for opposite reasons: the
+\textbf{mean} goes to zero because that is the prior mean; the
+\textbf{std} goes to one because that is the prior width. Confusing the
+two is the classic way to convince yourself a null mode was measured.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{9-monte-carlo-convergence}{%
+\subsection{9. Monte Carlo
+convergence}\label{9-monte-carlo-convergence}}
+
+\texttt{std\_map} is a sample standard deviation over
+\texttt{n\_realizations\ =\ 1000} draws (seeded, \texttt{seed=1420}, so
+runs are reproducible). A sample std from \(N\) draws carries fractional
+error
+
+\[ \frac{\Delta\sigma}{\sigma} \approx \frac{1}{\sqrt{2(N-1)}} \approx 2.2\,\% \quad (N = 1000) \]
+
+and the variance ratio, being a square, carries about \(4.5\,\%\).
+
+\textbf{This is visible in the plots.} The fine-grained speckle in the
+"Posterior Std Dev" and ratio panels is Monte Carlo noise, not sky
+structure. It shrinks as \(1/\sqrt{N}\) --- raise
+\texttt{n\_realizations} if you want those panels publication-smooth.
+The large-scale plane-versus-pole gradient is real signal and is
+unaffected.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{10-reproducing-the-figure}{%
+\subsection{10. Reproducing the
+figure}\label{10-reproducing-the-figure}}
+
+\texttt{plot\_posterior\_maps} (\texttt{plotting.py:949}) draws three
+Mollweide panels: posterior std, the variance ratio, and
+\(\mathrm{SNR} = |{\rm map}|/\sigma\).
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{fl }\OperatorTok{=}\NormalTok{ np.ones(lmax }\OperatorTok{+} \DecValTok{1}\NormalTok{)}
+\NormalTok{fl[}\DecValTok{11}\NormalTok{:] }\OperatorTok{=} \FloatTok{0.0}                                  \CommentTok{\# keep ell \textless{}= 10}
+\NormalTok{best\_map }\OperatorTok{=}\NormalTok{ hp.alm2map(hp.almxfl(x\_rec, fl), nside}\OperatorTok{=}\DecValTok{128}\NormalTok{)}
+\NormalTok{fig }\OperatorTok{=}\NormalTok{ msplt.plot\_posterior\_maps(std\_map, sigma2\_prior, best\_map, nside}\OperatorTok{=}\DecValTok{128}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+Note the \texttt{fl} low-pass: the \emph{mean} map is truncated to
+\(\ell \le 10\) for display, while \texttt{std\_map} is computed over
+the full \(\ell\) range. The SNR panel is therefore a smoothed numerator
+over an unsmoothed denominator --- fine for a visual check, but not a
+quantity to quote.
+
+Executed examples, all at cell 21:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{notebooks/mapmaking/notebooks\_out/40mhz/all-nominal.ipynb}
+\item
+  \texttt{notebooks/mapmaking/notebooks\_out/25mhz/mars.ipynb}
+\item
+  \texttt{notebooks/mapmaking/notebooks\_out/mars-lmax\{40,60,90,179\}.ipynb}
+  --- the \(\ell_{\rm max}\) series
+\item
+  plus the per-site combinations under \texttt{25mhz/} and
+  \texttt{40mhz/}
+\end{itemize}
+
+\end{document}
