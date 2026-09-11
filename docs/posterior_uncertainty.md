@@ -148,7 +148,70 @@ that the data removes.
 
 ---
 
-## 5. Sampling: a low-rank square root
+## 5. The eigenmodes of the posterior
+
+The SVD has already produced them. Section 4 wrote
+
+$$ \tilde{C}_{\rm post} = V\left(\Sigma^2+I\right)^{-1}V^{\mathsf H} + \left(I - VV^{\mathsf H}\right) $$
+
+which *is* an eigendecomposition: the rows of `Vh` are the
+eigenvectors, and the eigenvalues are
+
+$$ \lambda_k = \frac{1}{\sigma_k^2+1} $$
+
+together with $\lambda = 1$ repeated $n_{\rm alm} - n_{\rm vec}$ times
+for the untouched subspace. Nothing further needs computing — `Vh`
+and `Sigma` are the answer. (Checked against a dense `eigh`:
+agreement to $3\times10^{-15}$.)
+
+These are the signal-to-noise, or Karhunen–Loève, eigenmodes familiar
+from CMB analysis. Because $\lambda_k$ *is* the fraction of prior
+variance surviving in mode $k$, sorting by $\lambda$ orders the sky
+patterns from best-measured to entirely untouched. To look at one,
+transform it to a map:
+
+```python
+from mistsim.alm import alm1d_to_hp
+mode = np.sqrt(Sdiag) * Vh[k]                       # S^{1/2} v_k
+m = hp.alm2map(np.asarray(alm1d_to_hp(mode)), nside)
+```
+
+The $S^{1/2}$ is what puts the mode back into temperature units.
+Plot `Vh[k]` directly and you get the whitened pattern, which
+$C_\ell^{-1/2}$ has tilted towards high $\ell$.
+
+Equivalently, $S^{1/2}v_k$ solves the generalized problem
+$C_{\rm post}u = \lambda S u$ with the same $\lambda_k$ — the
+alm-space statement of the same modes, orthogonal under the $S^{-1}$
+inner product.
+
+### These are not the eigenvectors of $C_{\rm post}$
+
+$C_{\rm post} = S^{1/2}\tilde{C}_{\rm post}S^{1/2}$ is a *congruence*,
+not a similarity transform, so it does not preserve eigenvectors.
+Substituting $S^{1/2}v_k$ into $\mathrm{eigh}(S - BB^{\mathsf T})$
+leaves a relative residual of 3.6 — not even approximately
+eigenvectors.
+
+That ordinary decomposition does exist, and is affordable (0.51 GB and
+seconds at $\ell_{\rm max} = 90$; 7.8 GB plus LAPACK workspace at 179).
+But it ranks modes by *absolute* variance in $\mathrm{K}^2$, and
+`cl_prior` spans $8.1\times10^4$ across $\ell$ with
+$C_\ell \sim \ell^{-2.1}$. Its leading modes are therefore the
+monopole and dipole almost regardless of what the instrument
+measured, and a mode at $\ell = 90$ the beam never touched still ranks
+near the bottom purely because its prior variance is $10^5$ times
+smaller. Use it only for an absolute error budget. For "what does
+this configuration constrain", use $\lambda_k = 1/(\sigma_k^2+1)$.
+
+One practical note: `save_results` (`pipeline.py:2138`) stores `Sigma`
+and `nvec` but not `Vh`, so the eigenvectors cannot be recovered from
+a saved `.npz` without re-running the SVD. Full `Vh` is 93 MB per run
+at $\ell_{\rm max} = 90$; the leading 100 modes are 6.3 MB.
+
+---
+
+## 6. Sampling: a low-rank square root
 
 `posterior_uncertainty` draws from the posterior without ever
 forming $C_{\rm post}$:
@@ -169,23 +232,77 @@ orthogonal, so the two blocks square independently:
 
 $$ \Big[\,(I - P) + V(\Sigma^2+I)^{-1/2}V^{\mathsf H}\Big]^2 = (I-P) + V\left(\Sigma^2+I\right)^{-1}V^{\mathsf H} = C_{\rm post} $$
 
-so $\tilde{x}_{\rm sim}$ is an exact posterior draw.
+so $\tilde{x}_{\rm sim}$ is an exact posterior draw. Two properties
+matter:
 
-Two things make this the right formulation:
-
-1. **It never builds an $n_{\rm alm} \times n_{\rm alm}$ matrix.** Only
-   `nvec` projections are computed, so cost is
-   $O(n_{\rm alm}\cdot n_{\rm vec}\cdot n_{\rm real})$.
-2. **It handles the unretained subspace for free.** Modes outside
+1. **Only `nvec` projections are computed**, so a draw costs
+   $O(n_{\rm alm}\cdot n_{\rm vec})$ and no dense matrix is formed.
+2. **The unretained subspace is handled for free.** Modes outside
    $V$ keep coefficient 1 — full prior width — which is exactly
    right for genuine null modes.
 
 `V` is real here (real packed basis), so `Vht.T` is legitimately
 $V^{\mathsf H}$.
 
+### Why sample, rather than compute the variance exactly?
+
+For the configurations this pipeline actually runs, there is no good
+reason — the exact route is both cheaper and better.
+
+Forming $C_{\rm post}$ densely in alm space is not prohibitive: at
+$\ell_{\rm max} = 90$, $n_{\rm alm} = 8281$ and the matrix is 0.51 GB.
+What *is* prohibitive is the object the plot needs — the pixel-space
+covariance $Y C_{\rm post} Y^{\mathsf T}$, which at `nside = 128` is
+$196608^2$ entries, or 288 GB.
+
+Neither is required. Folding the same truncated identity the other
+way gives a rank-`nvec` **downdate of the prior**:
+
+$$ \tilde{C}_{\rm post} = I - VMV^{\mathsf H}, \qquad M_k = 1 - \frac{1}{\sigma_k^2+1} = \frac{\sigma_k^2}{\sigma_k^2+1} = \sigma_k D_k $$
+
+$$ C_{\rm post} = S - BB^{\mathsf T}, \qquad B = S^{1/2}VM^{1/2} \quad (n_{\rm alm} \times n_{\rm vec}) $$
+
+Because the prior is isotropic, $\mathrm{diag}(YSY^{\mathsf T}) = \sigma^2_{\rm prior}$
+— the scalar of section 8 — and the whole ratio map follows in closed
+form:
+
+$$ \frac{\sigma^2_{\rm post}(\hat{n})}{\sigma^2_{\rm prior}} = 1 - \frac{1}{\sigma^2_{\rm prior}}\sum_{k=1}^{n_{\rm vec}} \Big[\texttt{alm2map}(b_k)(\hat{n})\Big]^2 $$
+
+This costs `nvec` spherical-harmonic transforms, is exact to machine
+precision, and manifestly lands in $[0, 1]$ — the data can only ever
+remove variance. (Checked against a dense reference at
+$\ell_{\rm max} = 8$, `nvec = 40`, with the null space deliberately
+exercised: agreement to $2 \times 10^{-14}$.)
+
+Measured `nvec` across the 16 executed runs is 130–1465, median 614 —
+**13 of 16 fall below `n_realizations = 1000`**. For most runs the
+exact computation is therefore also the cheaper one:
+
+| | Transforms | Peak memory | Error |
+| --- | --- | --- | --- |
+| Monte Carlo | 1000, fixed | 1.46 GB | $\approx 4.5\,\%$ on the variance |
+| Exact downdate | `nvec`, median 614 | 93 MB | machine precision |
+
+The Monte Carlo peak is dominated by `x_sim_map`, shape
+`(1000, 196608)`, which is held in full before the `np.std`.
+
+What sampling buys that the exact route cannot:
+
+- **Arbitrary nonlinear functionals.** The draws carry the full
+  posterior distribution of *anything* — a sky-averaged temperature,
+  band powers, the ratio between two regions — not just second
+  moments. Nothing in the current pipeline uses this.
+- **Cost independent of `nvec`.** When $n_{\rm vec} \gg n_{\rm real}$
+  sampling wins; `all-nominal` (1465) and `all-nolake` (1296) are
+  already in that regime.
+
+So sampling is the more general tool, and the pipeline currently uses
+none of its generality. It is best understood as the fallback for
+large `nvec`, not as the default.
+
 ---
 
-## 6. Truncation
+## 7. Truncation
 
 `svds` is truncated at $k$ modes and `select_nvec`
 (`pipeline.py:604`) then keeps `nvec` of them. Three strategies:
@@ -204,7 +321,7 @@ direction, but it is the reason the `"manual"` path warns.
 
 ---
 
-## 7. Back to the sky
+## 8. Back to the sky
 
 ```python
 x_sim     = np.sqrt(Sdiag)[:, None] * x_tilde_sim   # un-whiten
@@ -215,9 +332,9 @@ std_map   = np.std(x_sim_map, axis=0)               # posterior sigma per pixel
 
 Un-whitening restores the $C_\ell$ scaling, and `alm2map` rotates
 into pixel space — where the covariance is emphatically *not*
-diagonal. This is the real payoff of the Monte Carlo: the
-pixel-space diagonal falls out of the sample scatter, instead of
-requiring a dense covariance to be transformed by $Y_{\ell m}$.
+diagonal, so the per-pixel variance cannot simply be read off
+$C_{\rm post}$. The Monte Carlo recovers it from the sample scatter;
+section 6 gives the exact alternative.
 
 The denominator is the per-pixel variance of a Gaussian random field
 with spectrum $C_\ell$ (`pipeline.py:1077`):
@@ -239,7 +356,7 @@ heavily project onto high-$\sigma_k$ modes and shrink the most.
 
 ---
 
-## 8. Relation to the Wiener filter factors
+## 9. Relation to the Wiener filter factors
 
 `wiener_filter` (`pipeline.py:771`) uses a *different* factor for
 the posterior mean:
@@ -266,7 +383,7 @@ classic way to convince yourself a null mode was measured.
 
 ---
 
-## 9. Monte Carlo convergence
+## 10. Monte Carlo convergence
 
 `std_map` is a sample standard deviation over
 `n_realizations = 1000` draws (seeded, `seed=1420`, so runs are
@@ -284,7 +401,7 @@ plane-versus-pole gradient is real signal and is unaffected.
 
 ---
 
-## 10. Reproducing the figure
+## 11. Reproducing the figure
 
 `plot_posterior_maps` (`plotting.py:949`) draws three Mollweide
 panels: posterior std, the variance ratio, and
