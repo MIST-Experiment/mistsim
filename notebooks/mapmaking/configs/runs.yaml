@@ -117,6 +117,14 @@ defaults:
     n_realizations: 1000
     seed: 1420
 
+    # n_modes_saved: how many leading right singular vectors (the
+    # posterior eigenmodes) to write into the results npz as
+    # "Vh_modes". 0 disables. Each mode is n_alm floats, so at
+    # lmax=90 100 modes is ~6.3 MB -- and multi-frequency runs
+    # multiply that by the number of frequencies.
+    # Feed them to pipeline.posterior_eigenmodes to get sky maps.
+    n_modes_saved: 0
+
   output:
     results_dir: "../results"
     notebooks_dir: "../notebooks_out"

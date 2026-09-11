@@ -1084,6 +1084,88 @@ def posterior_uncertainty(
     }
 
 
+def _modes_to_save(Vh, post_cfg):
+    """Leading right singular vectors to persist, or None.
+
+    Parameters
+    ----------
+    Vh : array-like, shape (k, n_alm)
+        Right singular vectors, one per row, in descending order.
+    post_cfg : dict
+        The ``posterior`` config block. ``n_modes_saved`` (default 0)
+        sets how many rows to keep; 0 disables saving. A request
+        larger than ``k`` is clamped.
+
+    Returns
+    -------
+    modes : np.ndarray or None
+
+    """
+    n = int(post_cfg.get("n_modes_saved", 0) or 0)
+    if n <= 0:
+        return None
+    return np.asarray(Vh)[:n]
+
+
+def posterior_eigenmodes(Vh_modes, Sigma, cl_prior, lmax, nside=128):
+    """Posterior eigenmodes as sky maps, with their eigenvalues.
+
+    The whitened posterior is already diagonal in the right singular
+    vectors: the rows of ``Vh`` are its eigenvectors and
+    ``1 / (sigma^2 + 1)`` its eigenvalues, so nothing is recomputed
+    here. Each mode is multiplied by ``S^{1/2}`` to put it back into
+    temperature units before being transformed to a map — without
+    that factor you get the whitened pattern, which ``cl^{-1/2}``
+    has tilted towards high ell.
+
+    Note these are *not* eigenvectors of ``C_post`` itself:
+    ``C_post = S^{1/2} Ctilde S^{1/2}`` is a congruence, not a
+    similarity transform.
+
+    Parameters
+    ----------
+    Vh_modes : array-like, shape (n_modes, n_alm)
+        Leading right singular vectors, as saved by
+        :func:`_modes_to_save`.
+    Sigma : array-like
+        Singular values in descending order; the first ``n_modes``
+        are used.
+    cl_prior : array-like, shape (lmax + 1,)
+        Prior power spectrum, as stored in the results npz.
+    lmax : int
+        Band limit of the packed alm vectors.
+    nside : int
+        HEALPix resolution of the returned maps.
+
+    Returns
+    -------
+    result : dict
+        Keys: ``maps`` with shape (n_modes, npix), and
+        ``eigenvalues`` with shape (n_modes,).
+
+    """
+    Vh_modes = np.atleast_2d(np.asarray(Vh_modes))
+    n_modes = Vh_modes.shape[0]
+
+    ells_hp, emms_hp = hp.Alm.getlm(lmax)
+    ells_full = np.concatenate((ells_hp, ells_hp[emms_hp != 0]))
+    s12 = np.sqrt(np.asarray(cl_prior)[ells_full])
+
+    maps = np.array(
+        [
+            hp.alm2map(
+                np.asarray(
+                    mapmaking.alm1d_to_hp(s12 * Vh_modes[k])
+                ).astype(np.complex128),
+                nside,
+            )
+            for k in range(n_modes)
+        ]
+    )
+    eigenvalues = 1.0 / (np.asarray(Sigma)[:n_modes] ** 2 + 1.0)
+    return {"maps": maps, "eigenvalues": eigenvalues}
+
+
 # ------------------------------------------------------------------
 # Multi-frequency data preparation
 # ------------------------------------------------------------------
@@ -1738,6 +1820,7 @@ def _solve_single_freq(config, y, x_packed, x_hp):
         "D": D,
         "nvec": nvec,
         "best_map": best_map,
+        "Vh_modes": _modes_to_save(Vh, post_cfg),
         "config": config,
     }
 
@@ -1788,6 +1871,7 @@ def _solve_multi_freq(
     nvec_list = []
     std_alm_list, std_map_list = [], []
     cl_prior_list, sigma2_prior_list = [], []
+    modes_list = []
     best_map_list = []
 
     for i in range(nfreq):
@@ -1812,6 +1896,7 @@ def _solve_multi_freq(
             n_realizations=n_real,
             seed=noise_seed,
         )
+        modes_list.append(_modes_to_save(Vh_i, post_cfg))
         std_alm_list.append(post["std_alm"])
         std_map_list.append(post["std_map"])
         cl_prior_list.append(post["cl_prior"])
@@ -1837,6 +1922,9 @@ def _solve_multi_freq(
         "Sigma": Sigma_all,
         "nvec": np.array(nvec_list),
         "best_map": np.stack(best_map_list),
+        "Vh_modes": (
+            np.stack(modes_list) if modes_list[0] is not None else None
+        ),
         "config": config,
         "multi_freq": True,
     }
@@ -2153,6 +2241,8 @@ def save_results(results, path):
         "nvec": results["nvec"],
         "config_yaml": yaml.dump(results["config"]),
     }
+    if results.get("Vh_modes") is not None:
+        d["Vh_modes"] = results["Vh_modes"]
     if results.get("multi_freq"):
         d["sim_freqs"] = results["sim_freqs"]
         d["multi_freq"] = True
