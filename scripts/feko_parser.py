@@ -163,11 +163,12 @@ def parse_feko_out(filepath, output_filepath=None):
         if output_filepath == filepath:
             output_filepath += ".npz"
 
+    # FEKO writes angles in degrees; beam files store radians
     np.savez(
         output_filepath,
         freqs=np.array(freqs),
-        theta=unique_thetas,
-        phi=unique_phis,
+        theta=np.deg2rad(unique_thetas),
+        phi=np.deg2rad(unique_phis),
         gain=gain_matrix,
     )
 

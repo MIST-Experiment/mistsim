@@ -337,6 +337,44 @@ def setup_sky_multi_freq(config):
 # ------------------------------------------------------------------
 
 
+def _horizon_from_beam_file(site_cfg, theta):
+    """Horizon mask for a file-based beam.
+
+    Parameters
+    ----------
+    site_cfg : dict
+        Expanded beam/site entry. If it has ``horizon_max_theta``
+        (degrees from zenith), directions with theta at or below
+        that value are above the horizon.
+    theta : array-like
+        Colatitude grid of the beam file, in radians.
+
+    Returns
+    -------
+    horizon : np.ndarray or None
+        Boolean mask of shape ``(ntheta, 1)``, or *None* when
+        ``horizon_max_theta`` is not set (croissant then puts the
+        horizon at theta = 90 deg).
+
+    Raises
+    ------
+    ValueError
+        If *theta* is not in radians.
+
+    """
+    theta = np.asarray(theta)
+    if theta.max() > np.pi * (1 + 1e-6):
+        raise ValueError(
+            f"Beam file {site_cfg['beam_file']} stores theta up to "
+            f"{theta.max():g}; beam files must store theta in radians."
+        )
+    if "horizon_max_theta" not in site_cfg:
+        return None
+    max_theta = np.deg2rad(site_cfg["horizon_max_theta"])
+    mask = (theta <= max_theta) | np.isclose(theta, max_theta)
+    return mask[:, None]
+
+
 def build_beam(site_cfg, sim_freq):
     """
     Build a Beam object from a site config dict.
@@ -373,12 +411,7 @@ def build_beam(site_cfg, sim_freq):
             f"(range {beam_freqs[0]}-{beam_freqs[-1]} MHz)"
         )
     g = gain[idx[0]]
-
-    horizon = None
-    if "horizon_max_theta" in site_cfg:
-        theta = d["theta"]
-        mask = theta <= site_cfg["horizon_max_theta"]
-        horizon = mask[:, None]
+    horizon = _horizon_from_beam_file(site_cfg, d["theta"])
 
     az_rot = site_cfg.get("beam_az_rot", 0.0)
     tilt = site_cfg.get("beam_tilt", 0.0)
@@ -440,12 +473,7 @@ def _build_multi_freq_beam(site_cfg, sim_freqs):
             )
         local_indices.append(idx[0])
     g = gain[np.array(local_indices)]
-
-    horizon = None
-    if "horizon_max_theta" in site_cfg:
-        theta = d["theta"]
-        mask = theta <= site_cfg["horizon_max_theta"]
-        horizon = mask[:, None]
+    horizon = _horizon_from_beam_file(site_cfg, d["theta"])
 
     az_rot = site_cfg.get("beam_az_rot", 0.0)
     tilt = site_cfg.get("beam_tilt", 0.0)
