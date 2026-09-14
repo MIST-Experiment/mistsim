@@ -43,3 +43,18 @@ def test_sky_alm():
         salm_class.compute_alm_eq(world="earth"),
         salm_class.compute_alm_eq(world="sun"),  # nonsense but ignored
     )
+
+def test_sky_alm_follows_simulation_epoch():
+    """
+    Given croissant's reference epoch, _SkyAlm must rotate its
+    equatorial (J2000) alm into the simulation frame, CIRS at that
+    epoch, as an equatorial Sky does. Otherwise a Simulator built from
+    alm pairs a J2000 sky with a CIRS beam, ~9' apart.
+    """
+    s = msky.Sky(sky_data, freqs, sampling="healpix", coord="equatorial")
+    salm_class = msky._SkyAlm(s.compute_alm_eq(world="earth"), freqs)
+    et = 7.5e8  # late 2023, seconds past J2000
+    assert jnp.allclose(
+        salm_class.compute_alm_eq(world="earth", et=et),
+        s.compute_alm_eq(world="earth", et=et),
+    )

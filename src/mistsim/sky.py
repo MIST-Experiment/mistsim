@@ -79,4 +79,8 @@ class _SkyAlm(eqx.Module):
         return self._sky_alm
 
     def compute_alm_eq(self, world="earth", et=None):
-        return self._sky_alm
+        # The alm are equatorial (FK5/J2000); croissant's Earth
+        # simulation frame is CIRS at the reference epoch ``et``.
+        if et is None:
+            return self._sky_alm
+        return cro.rotations.eq2cirs(self._sky_alm, et)
