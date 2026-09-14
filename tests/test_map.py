@@ -57,7 +57,7 @@ def test_pack_unpack_symmetry(lmax):
 
 
 def test_forward(sim):
-    sky_alm = sim.sky.compute_alm_eq(world="earth")
+    sky_alm = sim.precompute_sky_alm()
     lmax = cro.utils.lmax_from_shape(sky_alm.shape)
     x_real = ms.mapmaking.pack_s2fft_to_real(sky_alm)
 
@@ -79,7 +79,7 @@ def test_forward(sim):
 
 
 def test_A(sim):
-    sky_alm = sim.sky.compute_alm_eq(world="earth")
+    sky_alm = sim.precompute_sky_alm()
     x_real = ms.mapmaking.pack_s2fft_to_real(sky_alm)
 
     Amat = ms.mapmaking.make_Amat(sim)
@@ -98,7 +98,7 @@ def test_A(sim):
 
 
 def test_Alinear(sim):
-    sky_alm = sim.sky.compute_alm_eq(world="earth")
+    sky_alm = sim.precompute_sky_alm()
     x_real = ms.mapmaking.pack_s2fft_to_real(sky_alm)
     Amat = ms.mapmaking.make_Amat(sim)
 
@@ -485,7 +485,7 @@ def test_run_mapmaking_squeezes_single_freq(monkeypatch):
 
 def test_forward_single_freq(sim):
     """_forward_single_freq matches _forward_jax for 1-freq."""
-    sky_alm = sim.sky.compute_alm_eq(world="earth")
+    sky_alm = sim.precompute_sky_alm()
     lmax = cro.utils.lmax_from_shape(sky_alm.shape)
     x_real = ms.mapmaking.pack_s2fft_to_real(sky_alm)
 

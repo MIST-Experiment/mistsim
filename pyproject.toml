@@ -7,7 +7,7 @@ name = "mistsim"
 version = "0.0.1"
 description = "Simulations of MIST observations."
 readme = "README.md"
-requires-python = ">=3.10, <3.13"
+requires-python = ">=3.11, <3.14"
 license = {text = "MIT"}
 authors = [{ name="Christian Hellum Bye", email="cbh@berkeley.edu" }]
 classifiers = [
@@ -17,12 +17,12 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Astronomy",
 ]
 dependencies = [
-  "croissant-sim>=5.1.4",
+  "croissant-sim @ git+https://github.com/christianhbye/croissant.git@v5.3.0.dev2",
   "equinox",
-  "jax<0.6.0",
+  "jax",
   "numpy",
   "pyyaml",
-  "s2fft",
+  "s2fft @ git+https://github.com/slosar/s2fft.git@cefdf468ec2540818bafb37ed60d7b1fbba2f21f",
 ]
 
 [project.optional-dependencies]
@@ -76,5 +76,4 @@ dev = [
   "pytest-cov",
   "pytest-timeout",
   "ruff",
-  "s2fft>=1.2.2",
 ]

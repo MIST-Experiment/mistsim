@@ -52,6 +52,8 @@ def test_sky_alm(beam, sky, vis):
         lon,
         lat,
     )
+    # Equatorial (J2000) alm: _SkyAlm rotates them into the simulation
+    # frame itself, given the Simulator's reference epoch.
     sky_alm = sky.compute_alm_eq(world="earth")
 
     with pytest.warns(FutureWarning, match="Providing sky as an alm"):
