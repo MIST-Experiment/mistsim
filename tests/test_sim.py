@@ -52,9 +52,9 @@ def test_sky_alm(beam, sky, vis):
         lon,
         lat,
     )
-    # The simulation frame is CIRS at times_jd[0], so the alm must be
-    # computed at the same epoch as the beam to match sim1.
-    sky_alm = sky.compute_alm_eq(world="earth", et=sim1.et_ref)
+    # Equatorial (J2000) alm: _SkyAlm rotates them into the simulation
+    # frame itself, given the Simulator's reference epoch.
+    sky_alm = sky.compute_alm_eq(world="earth")
 
     with pytest.warns(FutureWarning, match="Providing sky as an alm"):
         sim2 = ms.Simulator(
