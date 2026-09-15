@@ -17,7 +17,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Astronomy",
 ]
 dependencies = [
-  "croissant-sim @ git+https://github.com/christianhbye/croissant.git@v5.3.0.dev2",
+  "croissant-sim @ git+https://github.com/christianhbye/croissant.git@v5.3.0.dev3",
   "equinox",
   "jax",
   "numpy",
