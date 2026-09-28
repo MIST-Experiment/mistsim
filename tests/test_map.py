@@ -4,7 +4,6 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 import scipy.sparse.linalg as sla
-from astropy import units as u
 from astropy.time import Time
 
 import mistsim as ms
@@ -18,7 +17,7 @@ def sim():
     freqs = jnp.linspace(50, 100, num=50)
     ntimes = 12
     t0 = Time("2024-01-01T00:00:00")
-    dt = 1 * u.sday / ntimes
+    dt = pipeline.SIDEREAL_DAY / ntimes
     times = cro.utils.time_array(t_start=t0, N_times=ntimes, delta_t=dt)
     lon = -90
     lat = 80

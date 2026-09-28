@@ -24,6 +24,11 @@ from .sky import Sky
 
 logger = logging.getLogger(__name__)
 
+# One Earth rotation as croissant's phases turn it (the Earth Rotation
+# Angle rate). astropy's u.sday is 8.4 ms shorter: it counts rotations
+# against the precessing equinox, which is what LST measures.
+SIDEREAL_DAY = cro.constants.sidereal_day["earth"] * u.s
+
 
 # ------------------------------------------------------------------
 # Config
@@ -1587,11 +1592,10 @@ def _make_times(obs):
     The day is croissant's rotation period, the one its phases use.
     """
     n_times = resolve_n_times(obs)
-    day = cro.constants.sidereal_day["earth"] * u.s
     return cro.utils.time_array(
         t_start=Time(obs["start_time"]),
         N_times=n_times,
-        delta_t=obs["n_sidereal_days"] * day / n_times,
+        delta_t=obs["n_sidereal_days"] * SIDEREAL_DAY / n_times,
     )
 
 
@@ -2365,7 +2369,7 @@ def add_beam_maps(npz_path, freq, nside=None):
         )
     # Minimal time array (only rotation matrices needed)
     start_time = Time(obs_cfg["start_time"])
-    end_time = start_time + 1.0 * u.sday
+    end_time = start_time + SIDEREAL_DAY
     times = cro.utils.time_array(
         t_start=start_time,
         t_end=end_time,
