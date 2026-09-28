@@ -840,13 +840,7 @@ def prior_mismatch_products(config, freq_mhz):
     cfg["sky"]["freqs"] = [freq_mhz]
 
     obs = cfg["observation"]
-    tstart = Time(obs["start_time"])
-    tend = tstart + obs["n_sidereal_days"] * u.sday
-    times = cro.utils.time_array(
-        t_start=tstart,
-        t_end=tend,
-        N_times=obs["n_times"],
-    )
+    times = _make_times(obs)
     freqs = np.array(_parse_freqs(cfg))
 
     fdata = _prepare_freq_data(cfg, times, freqs)
@@ -1546,14 +1540,58 @@ def _rsvd_all_freqs(fdata, config):
 # ------------------------------------------------------------------
 
 
+def resolve_n_times(obs):
+    """Number of time samples for an observation config.
+
+    ``obs["n_times"]`` when set. Otherwise the Nyquist count of the
+    forward model: Earth rotation makes each timestream a Fourier
+    series in the rotation angle with ``|m| <= lmax_sim``, so one
+    sidereal day needs ``2 lmax_sim + 1`` evenly spaced samples.
+    Fewer alias m-modes onto each other; more add no sky
+    information, only noise averaging.
+
+    Parameters
+    ----------
+    obs : dict
+        ``observation`` section of a pipeline config.
+
+    Returns
+    -------
+    int
+
+    """
+    lmax_sim = obs.get("lmax_sim") or obs["lmax"]
+    days = obs["n_sidereal_days"]
+    nyquist = int(np.ceil(days * (2 * lmax_sim + 1)))
+    n_times = obs.get("n_times")
+    if n_times is None:
+        return nyquist
+    if n_times < nyquist:
+        logger.warning(
+            "n_times=%d is below the Nyquist count %d for "
+            "lmax_sim=%d over %g sidereal days; m-modes will alias.",
+            n_times,
+            nyquist,
+            lmax_sim,
+            days,
+        )
+    return int(n_times)
+
+
 def _make_times(obs):
-    """Build time array from observation config."""
-    tstart = Time(obs["start_time"])
-    tend = tstart + obs["n_sidereal_days"] * u.sday
+    """Build time array from observation config.
+
+    :func:`resolve_n_times` samples spread evenly over
+    ``n_sidereal_days`` rotations with the end point excluded, so
+    one day of *n* samples sits at rotation angles ``2 pi k / n``.
+    The day is croissant's rotation period, the one its phases use.
+    """
+    n_times = resolve_n_times(obs)
+    day = cro.constants.sidereal_day["earth"] * u.s
     return cro.utils.time_array(
-        t_start=tstart,
-        t_end=tend,
-        N_times=obs["n_times"],
+        t_start=Time(obs["start_time"]),
+        N_times=n_times,
+        delta_t=obs["n_sidereal_days"] * day / n_times,
     )
 
 

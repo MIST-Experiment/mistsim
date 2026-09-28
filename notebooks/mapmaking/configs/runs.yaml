@@ -86,7 +86,13 @@ defaults:
   observation:
     start_time: "2026-02-25 12:27"
     n_sidereal_days: 1.0
-    n_times: 500
+    # Time samples over the whole observation. null = the Nyquist
+    # count of the forward model, 2 lmax_sim + 1 per sidereal day:
+    # each timestream is a Fourier series in the Earth rotation
+    # angle with |m| <= lmax_sim. More samples add no sky
+    # information, only noise averaging (the noise per sample
+    # scales with the sample spacing).
+    n_times: null
     lmax: 90
     lmax_sim: 179  # forward model resolution (null = same as lmax)
     # Beam normalization convention.  true (default) = normalize
@@ -102,7 +108,8 @@ defaults:
     # *computes*. This is a computational budget, not how many
     # you keep — that is controlled by nvec_method/threshold.
     # Must be <= min(n_data, n_alm) where n_data = n_sites *
-    # n_times. Exceeding the operator rank wastes computation
+    # n_times. The operator rank is at most
+    # n_sites * (2 lmax + 1). Exceeding it wastes computation
     # but does not cause errors.
     n_singular_values: 800
 
@@ -133,7 +140,7 @@ defaults:
 runs:
   # === Nominal comparison at 40 MHz (7 runs, includes lake beam) ===
 
-  mars:  # Group 1: 2 beams, max rank = 1000
+  mars:  # Group 1: 2 beams, max rank = 362
     run_name: mars
     beams:
       - mars-csa2022-dip
@@ -142,7 +149,7 @@ runs:
       results_dir: "../results/40mhz"
       notebooks_dir: "../notebooks_out/40mhz"
 
-  mars-nv:  # Groups 1+2: 4 beams, max rank = 2000
+  mars-nv:  # Groups 1+2: 4 beams, max rank = 724
     run_name: mars-nv
     beams:
       - mars-csa2022-dip
@@ -155,7 +162,7 @@ runs:
       results_dir: "../results/40mhz"
       notebooks_dir: "../notebooks_out/40mhz"
 
-  mars-lake:  # Groups 1+3: 3 beams, max rank = 1500
+  mars-lake:  # Groups 1+3: 3 beams, max rank = 543
     run_name: mars-lake
     beams:
       - mars-csa2022-dip
@@ -197,7 +204,7 @@ runs:
       results_dir: "../results/40mhz"
       notebooks_dir: "../notebooks_out/40mhz"
 
-  alma-torres:  # Groups 4+5: 4 beams, max rank = 2000
+  alma-torres:  # Groups 4+5: 4 beams, max rank = 724
     run_name: alma-torres
     beams:
       - alma-csa2022-dip
