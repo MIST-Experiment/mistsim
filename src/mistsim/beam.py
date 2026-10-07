@@ -1,6 +1,35 @@
 import warnings
 
 import croissant as cro
+import jax.numpy as jnp
+from croissant.horizon import _horizon_in_beam_frame
+
+# mistsim's ground grid is the beam grid as it is at beam_az_rot = 0
+# (phi = 0 North, phi = 90 deg West, compass azimuth A = -phi). Croissant's
+# ground grid has phi = 0 East (A = 90 - phi). The same direction therefore
+# sits 90 deg further round on croissant's grid.
+_GROUND_GRID_OFFSET_DEG = 90.0
+
+
+def _to_croissant_ground_grid(horizon, sampling, spatial_shape):
+    """Move a mask from mistsim's ground grid onto croissant's.
+
+    Croissant's own periodic shift does the work: it is exact when 90 deg
+    is a whole number of grid columns (the 1-deg MWSS grid, and every
+    HEALPix ring) and linear interpolation otherwise. Scalars and
+    theta-only masks come back unchanged.
+    """
+    nside = None
+    if sampling == "healpix":
+        nside = int(round((spatial_shape[0] / 12) ** 0.5))
+    return _horizon_in_beam_frame(
+        jnp.asarray(horizon),
+        "topocentric",
+        _GROUND_GRID_OFFSET_DEG,
+        sampling,
+        spatial_shape,
+        nside,
+    )
 
 
 class Beam(cro.Beam):
@@ -15,7 +44,7 @@ class Beam(cro.Beam):
         beam_az_rot=0.0,
         beam_tilt=0.0,
         lmax=None,
-        horizon_frame="beam",
+        horizon_frame="topocentric",
     ):
         """
         Beam pattern object. Holds the beam pattern in local antenna
@@ -52,12 +81,16 @@ class Beam(cro.Beam):
             Visible fractions in [0, 1] for each (theta, phi) direction
             (or pixel), broadcastable to the spatial axes of data. Zero
             blocks a sample, one keeps it, and fractional values weight
-            partially visible cells; boolean masks are accepted. Which
-            grid the array lives on is set by `horizon_frame`. If None,
-            the horizon is at theta = 90 degrees with fractional
-            boundary cells (croissant's default). For a horizon given
-            as a function of azimuth, ``croissant.horizon_weights``
-            builds fractional boundary weights on regular grids.
+            partially visible cells; boolean masks are accepted. With the
+            default ``horizon_frame="topocentric"`` the mask is fixed to
+            the ground. It is given on the beam grid as it is at
+            ``beam_az_rot = 0`` (phi = 0 North, phi = 90 deg West), so a
+            direction at compass azimuth ``A`` sits at ``phi = -A``
+            (mod 360 deg), and it stays there whatever `beam_az_rot` is.
+            If None, the horizon is at theta = 90 degrees with fractional
+            boundary cells (croissant's default). For a horizon given as
+            a function of azimuth, ``croissant.horizon_weights`` builds
+            fractional boundary weights on regular grids.
         beam_az_rot : float
             Azimuthal rotation of the beam in degrees. The rotation is
             defined in the astronomy convention, i.e., the angle
@@ -71,20 +104,30 @@ class Beam(cro.Beam):
         lmax : int or None
             Removed. Will be ignored if provided and raise a
             FutureWarning.
-        horizon_frame : {"beam", "topocentric"}
-            Forwarded to ``croissant.Beam``. The default ``"beam"``
-            keeps `horizon` on the beam grid, so it rotates with
-            `beam_az_rot`: right for obstructions attached to the
-            antenna, or for masks the caller has already
-            counter-rotated. Use ``"topocentric"`` for terrain: the
-            weights then live on croissant's fixed ground grid, whose
-            phi = 0 is East and phi = 90 deg is North, so a horizon
-            given in compass azimuth ``A`` goes at ``phi = 90 - A``
-            (deg), independent of `beam_az_rot`. croissant
-            counter-rotates it into the beam frame by periodic linear
-            interpolation in phi, which is exact for rotations by whole
-            grid columns and softens edges in between;
-            ``horizon_in_beam_frame`` gives the weights applied.
+        horizon_frame : {"topocentric", "beam"}
+            Which frame `horizon` is fixed to. **Use the default,
+            ``"topocentric"``.** A horizon mask describes what blocks the
+            sky from where the antenna stands: terrain, buildings, the
+            ground itself. All of these are fixed to the ground, so the
+            mask must not turn when the beam does. Structures attached
+            to the antenna are not a horizon mask: they belong in the
+            beam pattern itself, from the EM simulation.
+
+            ``"beam"`` applies the mask on the rotated beam grid, so it
+            turns with `beam_az_rot`. It exists only for masks a caller
+            has already counter-rotated into the beam frame by hand (the
+            only correct way to handle terrain before this option
+            existed). It is the same as ``"topocentric"`` when
+            ``beam_az_rot = 0`` and for theta-only masks.
+
+            mistsim moves a topocentric mask onto croissant's ground grid
+            (phi = 0 East) before passing it on; croissant then rotates
+            it into the beam frame by periodic linear interpolation in
+            phi. Both steps are exact when the shifts are whole grid
+            columns (e.g. the 1-deg MWSS grid with whole-degree
+            `beam_az_rot`) and soften sharp edges otherwise. The `horizon`
+            attribute holds croissant's ground-grid weights;
+            ``horizon_in_beam_frame`` gives the weights actually applied.
 
         Raises
         ------
@@ -105,6 +148,10 @@ class Beam(cro.Beam):
             )
         # croissant expects X-axis along East
         beam_rot = beam_az_rot - 90
+        if horizon is not None and horizon_frame == "topocentric":
+            horizon = _to_croissant_ground_grid(
+                horizon, sampling, jnp.shape(data)[1:]
+            )
         super().__init__(
             data,
             freqs,

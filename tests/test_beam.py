@@ -67,21 +67,29 @@ def _mwss_grid():
 
 
 def _ground_sector_mask(lo=80.0, hi=100.0, theta_h=60.0):
-    """Ground-grid mask blocking compass azimuth [lo, hi] below theta_h.
+    """Ground mask blocking compass azimuth [lo, hi] below theta_h.
 
-    On croissant's ground grid phi = 0 is East and phi = 90 deg is
-    North, so compass azimuth A sits at phi = 90 - A.
+    mistsim's ground grid is the beam grid at beam_az_rot = 0, so
+    compass azimuth A sits at phi = -A.
     """
     theta, phi = _mwss_grid()
-    azimuth = np.mod(90.0 - phi, 360.0)
+    azimuth = np.mod(-phi, 360.0)
     in_sector = (azimuth >= lo) & (azimuth <= hi)
     return np.where((theta[:, None] > theta_h) & in_sector[None, :], 0.0, 1.0)
 
 
-def test_horizon_frame_defaults_to_beam():
+def _asymmetric_lobe():
+    """A beam with a lobe along its x axis (phi = 0)."""
+    theta, phi = _mwss_grid()
+    cos_phi = np.cos(np.deg2rad(phi))[None, :]
+    sin_theta = np.sin(np.deg2rad(theta))[:, None]
+    return jnp.asarray((1.0 + 0.8 * cos_phi * sin_theta)[None])
+
+
+def test_horizon_frame_defaults_to_topocentric():
     data = jnp.ones((1, 181, 360))
     beam = Beam(data, jnp.array([50.0]))
-    assert beam.horizon_frame == "beam"
+    assert beam.horizon_frame == "topocentric"
 
 
 def test_horizon_frame_rejects_unknown_value():
@@ -91,12 +99,12 @@ def test_horizon_frame_rejects_unknown_value():
 
 
 @pytest.mark.parametrize("beam_az_rot", [0.0, 40.0, 233.0])
-def test_topocentric_mask_stays_on_the_ground(beam_az_rot):
+def test_default_mask_stays_on_the_ground(beam_az_rot):
     """A ground-fixed sector lands at the same compass azimuth.
 
     A beam-grid column phi_b points to compass azimuth
-    A = beam_az_rot - phi_b, so the weights applied in the beam frame
-    must equal the ground mask read at that azimuth.
+    A = beam_az_rot - phi_b, which is ground column -A, so the weights
+    applied in the beam frame must equal the ground mask read there.
     """
     _, phi = _mwss_grid()
     mask = _ground_sector_mask()
@@ -105,11 +113,10 @@ def test_topocentric_mask_stays_on_the_ground(beam_az_rot):
         jnp.array([50.0]),
         horizon=jnp.asarray(mask),
         beam_az_rot=beam_az_rot,
-        horizon_frame="topocentric",
     )
     applied = np.asarray(beam.horizon_in_beam_frame)
     azimuth = np.mod(beam_az_rot - phi, 360.0)
-    ground_col = np.mod(90.0 - azimuth, 360.0).astype(int)
+    ground_col = np.mod(-azimuth, 360.0).astype(int)
     np.testing.assert_array_equal(applied, mask[:, ground_col])
     # the blocked columns are the East sector, whatever the rotation
     blocked = azimuth[(applied == 0).any(axis=0)]
@@ -118,7 +125,7 @@ def test_topocentric_mask_stays_on_the_ground(beam_az_rot):
 
 
 def test_beam_frame_mask_rotates_with_the_beam():
-    """The default frame applies the mask as given, at any rotation."""
+    """horizon_frame="beam" applies the mask as given, at any rotation."""
     mask = _ground_sector_mask()
     for beam_az_rot in (0.0, 40.0):
         beam = Beam(
@@ -126,42 +133,93 @@ def test_beam_frame_mask_rotates_with_the_beam():
             jnp.array([50.0]),
             horizon=jnp.asarray(mask),
             beam_az_rot=beam_az_rot,
+            horizon_frame="beam",
         )
         np.testing.assert_array_equal(
             np.asarray(beam.horizon_in_beam_frame), mask
         )
 
 
+def test_frames_agree_at_zero_rotation_mwss():
+    """At beam_az_rot = 0 the new default changes nothing."""
+    data = _asymmetric_lobe()
+    mask = jnp.asarray(_ground_sector_mask())
+    topo = Beam(data, jnp.array([50.0]), horizon=mask)
+    old = Beam(data, jnp.array([50.0]), horizon=mask, horizon_frame="beam")
+    np.testing.assert_array_equal(
+        np.asarray(topo.horizon_in_beam_frame),
+        np.asarray(old.horizon_in_beam_frame),
+    )
+    np.testing.assert_array_equal(
+        np.asarray(topo.compute_fgnd()), np.asarray(old.compute_fgnd())
+    )
+
+
+def test_frames_agree_at_zero_rotation_healpix():
+    """The 90-deg grid shift is exact on every HEALPix ring."""
+    nside = 8
+    npix = 12 * nside**2
+    rng = np.random.default_rng(0)
+    mask = jnp.asarray(rng.uniform(size=npix))
+    data = jnp.ones((1, npix))
+    topo = Beam(data, jnp.array([50.0]), sampling="healpix", horizon=mask)
+    old = Beam(
+        data,
+        jnp.array([50.0]),
+        sampling="healpix",
+        horizon=mask,
+        horizon_frame="beam",
+    )
+    np.testing.assert_allclose(
+        np.asarray(topo.horizon_in_beam_frame),
+        np.asarray(old.horizon_in_beam_frame),
+        rtol=0,
+        atol=1e-15,
+    )
+
+
+@pytest.mark.parametrize("beam_az_rot", [0.0, 40.0])
+def test_theta_only_mask_is_frame_independent(beam_az_rot):
+    """The pipeline's theta-only masks behave the same in both frames."""
+    theta, _ = _mwss_grid()
+    mask = jnp.asarray((theta <= 80.0)[:, None].astype(float))
+    kw = dict(horizon=mask, beam_az_rot=beam_az_rot)
+    topo = Beam(_asymmetric_lobe(), jnp.array([50.0]), **kw)
+    old = Beam(
+        _asymmetric_lobe(), jnp.array([50.0]), horizon_frame="beam", **kw
+    )
+    np.testing.assert_array_equal(
+        np.asarray(topo.compute_fgnd()), np.asarray(old.compute_fgnd())
+    )
+
+
 def test_topocentric_fgnd_matches_manual_counter_rotation():
-    """An asymmetric beam sees the ground mask the caller would build.
+    """An asymmetric beam sees the ground mask a caller would build.
 
     With a lobe on the beam's x axis, the blocked fraction depends on
     where the lobe points relative to the ground-fixed sector. The
-    topocentric result must equal the beam-frame result with a mask
-    counter-rotated by hand.
+    default (topocentric) result must equal the beam-frame result with
+    the mask counter-rotated by hand.
     """
-    theta, phi = _mwss_grid()
-    cos_phi = np.cos(np.deg2rad(phi))[None, :]
-    sin_theta = np.sin(np.deg2rad(theta))[:, None]
-    lobe = 1.0 + 0.8 * cos_phi * sin_theta
-    data = jnp.asarray(lobe[None])
+    _, phi = _mwss_grid()
+    data = _asymmetric_lobe()
     mask = _ground_sector_mask()
     fgnd = []
     for beam_az_rot in (0.0, 90.0):
         azimuth = np.mod(beam_az_rot - phi, 360.0)
-        manual = mask[:, np.mod(90.0 - azimuth, 360.0).astype(int)]
+        manual = mask[:, np.mod(-azimuth, 360.0).astype(int)]
         topo = Beam(
             data,
             jnp.array([50.0]),
             horizon=jnp.asarray(mask),
             beam_az_rot=beam_az_rot,
-            horizon_frame="topocentric",
         )
         by_hand = Beam(
             data,
             jnp.array([50.0]),
             horizon=jnp.asarray(manual),
             beam_az_rot=beam_az_rot,
+            horizon_frame="beam",
         )
         f_topo = float(np.asarray(topo.compute_fgnd()).ravel()[0])
         f_hand = float(np.asarray(by_hand.compute_fgnd()).ravel()[0])
