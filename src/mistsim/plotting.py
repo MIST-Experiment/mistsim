@@ -629,6 +629,11 @@ def plot_comparison_grid(
     frac_range=1.0,
     ratio=True,
     orientation="horizontal",
+    true_label=None,
+    res_percentile=None,
+    x_removed=None,
+    removed_label="Removed from the truth",
+    removed_percentile=99.0,
 ):
     """
     Grid comparing multiple recovered maps against the true map.
@@ -637,11 +642,12 @@ def plot_comparison_grid(
 
     ``"horizontal"`` (default)
         Top row: true map then each recovered map (shared colorscale).
-        Bottom row: empty then residual for each (shared colorscale).
+        Bottom row: *x_removed* (or empty) then residual for each
+        (shared colorscale).
         Each recovered column gets its label as a title.
 
     ``"vertical"``
-        Top row: true map centred across both columns.
+        Top row: true map, and *x_removed* on the right if given.
         Subsequent rows: recovered map (left) and residual (right).
         Each row is labelled with a ylabel on the recovered map.
 
@@ -670,6 +676,20 @@ def plot_comparison_grid(
         If False, plot absolute residual (true - rec).
     orientation : str
         ``"horizontal"`` or ``"vertical"``.
+    true_label : str, optional
+        Title of the true map. Default ``"True (l <= plot_lmax)"``.
+    res_percentile : float, optional
+        For ratio=False, clip the residual colour range at this
+        percentile of |residual| instead of its maximum, so that a few
+        bright pixels do not wash out the rest.
+    x_removed : array-like, optional
+        Alm in healpy ordering of the part of the truth that the shown
+        view leaves out, e.g. the truth minus its low-pass. Drawn without
+        the low-pass, in the free panel, with its own colour range.
+    removed_label : str
+        Title of the *x_removed* panel.
+    removed_percentile : float
+        Percentile of |x_removed| (as a map) that sets its colour range.
 
     Returns
     -------
@@ -678,6 +698,8 @@ def plot_comparison_grid(
     """
     n = len(x_recs)
     coord = ["C", "G"] if plot_galactic else ["C", "C"]
+    if true_label is None:
+        true_label = f"True (l <= {plot_lmax})"
 
     fl = np.ones(lmax + 1)
     fl[plot_lmax + 1 :] = 0.0
@@ -705,13 +727,20 @@ def plot_comparison_grid(
     )
 
     if ratio:
-        res_raw = frac_range
+        ticks = MaxNLocator(symmetric=True).tick_values(
+            -frac_range, frac_range
+        )
+        res_max = ticks[-1]
         res_prefix = "Fractional Residual"
     else:
-        res_raw = max(np.max(np.abs(m)) for m in maps_res)
+        res_max = _symmetric_limit(maps_res, res_percentile)
         res_prefix = "Residual"
-    ticks = MaxNLocator(symmetric=True).tick_values(-res_raw, res_raw)
-    res_max = ticks[-1]
+
+    removed = None
+    if x_removed is not None:
+        map_removed = hp.alm2map(x_removed, nside=nside)
+        removed_max = _symmetric_limit([map_removed], removed_percentile)
+        removed = (map_removed, removed_label, removed_max)
 
     if orientation == "vertical":
         fig = _comparison_grid_vertical(
@@ -719,13 +748,14 @@ def plot_comparison_grid(
             maps_rec,
             maps_res,
             labels,
-            plot_lmax,
+            true_label,
             coord,
             vmin,
             vmax,
             res_max,
             res_prefix,
             n,
+            removed,
         )
     else:
         fig = _comparison_grid_horizontal(
@@ -733,15 +763,33 @@ def plot_comparison_grid(
             maps_rec,
             maps_res,
             labels,
-            plot_lmax,
+            true_label,
             coord,
             vmin,
             vmax,
             res_max,
             res_prefix,
             n,
+            removed,
         )
     return fig
+
+
+def _symmetric_limit(maps, percentile=None):
+    """Rounded symmetric colour limit: max |maps|, or that percentile."""
+    values = np.abs(np.concatenate([np.ravel(m) for m in maps]))
+    raw = (
+        values.max()
+        if percentile is None
+        else np.percentile(values, percentile)
+    )
+    return MaxNLocator(symmetric=True).tick_values(-raw, raw)[-1]
+
+
+def _symmetric_locator():
+    """Ticks for one symmetric colour bar. A locator is bound to one axis,
+    so each colour bar needs its own."""
+    return MaxNLocator(nbins=4, symmetric=True)
 
 
 def _comparison_grid_horizontal(
@@ -749,13 +797,14 @@ def _comparison_grid_horizontal(
     maps_rec,
     maps_res,
     labels,
-    plot_lmax,
+    true_label,
     coord,
     vmin,
     vmax,
     res_max,
     res_prefix,
     n,
+    removed=None,
 ):
     ncols = n + 1
     fig = plt.figure(figsize=(5 * ncols, 8))
@@ -776,7 +825,7 @@ def _comparison_grid_horizontal(
     hp.mollview(
         map_true,
         sub=(2, ncols, 1),
-        title=f"True (l <= {plot_lmax})",
+        title=true_label,
         cmap="viridis",
         min=vmin,
         max=vmax,
@@ -798,7 +847,6 @@ def _comparison_grid_horizontal(
         _add_cbar(plt.gca())
 
     # Row 2: blank under true, then residuals
-    sym = MaxNLocator(symmetric=True)
     for i, (mres, lab) in enumerate(zip(maps_res, labels)):
         hp.mollview(
             mres,
@@ -811,7 +859,22 @@ def _comparison_grid_horizontal(
             coord=coord,
             cbar=False,
         )
-        _add_cbar(plt.gca(), loc=sym)
+        _add_cbar(plt.gca(), loc=_symmetric_locator())
+
+    # Bottom left: what the shown view leaves out of the truth
+    if removed is not None:
+        map_removed, removed_label, removed_max = removed
+        hp.mollview(
+            map_removed,
+            sub=(2, ncols, ncols + 1),
+            title=removed_label,
+            cmap="coolwarm",
+            min=-removed_max,
+            max=removed_max,
+            coord=coord,
+            cbar=False,
+        )
+        _add_cbar(plt.gca(), loc=_symmetric_locator())
 
     fig.subplots_adjust(hspace=0.3, wspace=0.05, top=0.92)
     return fig
@@ -822,13 +885,14 @@ def _comparison_grid_vertical(
     maps_rec,
     maps_res,
     labels,
-    plot_lmax,
+    true_label,
     coord,
     vmin,
     vmax,
     res_max,
     res_prefix,
     n,
+    removed=None,
 ):
     nrows = n + 1
     fig = plt.figure(figsize=(10, 3.5 * nrows))
@@ -845,11 +909,11 @@ def _comparison_grid_vertical(
             cb.locator = loc
             cb.update_ticks()
 
-    # Row 0: true map centred (use left column, leave right blank)
+    # Row 0: true map (left column); the right is for x_removed
     hp.mollview(
         map_true,
         sub=(nrows, 2, 1),
-        title=f"True (l <= {plot_lmax})",
+        title=true_label,
         cmap="viridis",
         min=vmin,
         max=vmax,
@@ -859,7 +923,6 @@ def _comparison_grid_vertical(
     _add_cbar(plt.gca())
 
     # Rows 1..n: recovered (left) + residual (right)
-    sym = MaxNLocator(symmetric=True)
     for i, (mr, mres, lab) in enumerate(zip(maps_rec, maps_res, labels)):
         row = i + 1
         # Recovered map (left column)
@@ -888,7 +951,22 @@ def _comparison_grid_vertical(
             coord=coord,
             cbar=False,
         )
-        _add_cbar(plt.gca(), loc=sym)
+        _add_cbar(plt.gca(), loc=_symmetric_locator())
+
+    # Top right: what the shown view leaves out of the truth
+    if removed is not None:
+        map_removed, removed_label, removed_max = removed
+        hp.mollview(
+            map_removed,
+            sub=(nrows, 2, 2),
+            title=removed_label,
+            cmap="coolwarm",
+            min=-removed_max,
+            max=removed_max,
+            coord=coord,
+            cbar=False,
+        )
+        _add_cbar(plt.gca(), loc=_symmetric_locator())
 
     fig.subplots_adjust(hspace=0.3, wspace=0.05)
     return fig
