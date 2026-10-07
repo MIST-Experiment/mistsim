@@ -345,28 +345,52 @@ def setup_sky_multi_freq(config):
 
 
 def _horizon_from_beam_file(site_cfg, theta):
-    """Horizon mask for a file-based beam.
+    """Horizon weights for a file-based beam.
 
     Parameters
     ----------
     site_cfg : dict
         Expanded beam/site entry. If it has ``horizon_max_theta``
-        (degrees from zenith), directions with theta at or below
-        that value are above the horizon.
+        (degrees from zenith), the sky is open for theta below that
+        value and blocked beyond it, at every azimuth.
     theta : array-like
-        Colatitude grid of the beam file, in radians.
+        Colatitude axis of the beam file's regular grid, in radians,
+        strictly increasing within [0, pi].
 
     Returns
     -------
     horizon : np.ndarray or None
-        Boolean mask of shape ``(ntheta, 1)``, or *None* when
+        Visible fractions in [0, 1] of shape ``(ntheta, 1)``, from
+        ``croissant.horizon_weights``, or *None* when
         ``horizon_max_theta`` is not set (croissant then puts the
-        horizon at theta = 90 deg).
+        horizon at theta = 90 deg, with the same fractional boundary
+        row).
 
     Raises
     ------
     ValueError
-        If *theta* is not in radians.
+        If *theta* is not in radians, or (from
+        ``croissant.horizon_weights``) is not a strictly increasing
+        grid within [0, pi].
+
+    Notes
+    -----
+    Each row of a gridded beam stands for a cell reaching halfway to
+    its neighbours in theta. On the 1-deg MWSS grid the row at 80 deg
+    covers [79.5, 80.5] deg. A boolean mask snaps the horizon to a
+    cell edge, up to half a row off. With the horizon on a row it
+    keeps that row whole, so the horizon sits half a row too low and
+    a strip of ground is open to the sky. For a sin^2 beam cut at
+    80 deg it misses 4.9 % of the ground the cut adds beyond 90 deg
+    (tests/test_horizon.py). Rows nearer the zenith than the boundary
+    therefore get weight 1, rows beyond it 0, and the boundary row
+    the open share of its cell, linear in theta. This is the
+    fractional edge croissant gives its own default horizon.
+
+    This changes results for configs that set ``horizon_max_theta``.
+    The function used to return a boolean mask, so the boundary row
+    had weight 0 or 1. It now gets 1/2 when the horizon lies on a row
+    and, in general, the open share of its cell.
 
     """
     theta = np.asarray(theta)
@@ -378,8 +402,7 @@ def _horizon_from_beam_file(site_cfg, theta):
     if "horizon_max_theta" not in site_cfg:
         return None
     max_theta = np.deg2rad(site_cfg["horizon_max_theta"])
-    mask = (theta <= max_theta) | np.isclose(theta, max_theta)
-    return mask[:, None]
+    return np.asarray(cro.horizon_weights(theta, theta_h=max_theta))
 
 
 def build_beam(site_cfg, sim_freq):
