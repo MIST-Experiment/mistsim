@@ -1,7 +1,7 @@
 """Helpers for comparing mistsim with Raul Monsalve's simulations.
 
-Used by ``raul_comparison_normalization.ipynb``. The pixel-domain
-convolution reimplements the algorithm of ``convolution`` in
+Used by ``normalization/run.py`` and ``versions/prepare_inputs.py``.
+The pixel-domain convolution reimplements the algorithm of ``convolution`` in
 ``raul_global21cm/astro.py`` (MIST-Experiment/raul_global21cm @ 4c2d125,
 line 960): sky pixels are moved to (AZ, EL) with astropy, the beam is
 interpolated onto them with a bicubic ``RectBivariateSpline`` in
@@ -283,6 +283,7 @@ def run_mistsim(
     normalization="above_horizon",
     tgnd=300.0,
     sky_alm=None,
+    horizon_frame=None,
 ):
     """Simulate with mistsim and return (T_ant, fgnd).
 
@@ -298,17 +299,21 @@ def run_mistsim(
     sky_alm: optional precomputed sky alm in the simulation frame
       (``Simulator.precompute_sky_alm``); valid only for the same
       times_jd[0].
+    horizon_frame: passed to ``mistsim.Beam`` when given ("beam" or
+      "topocentric"); None keeps mistsim's default.
     """
     import croissant as cro
 
     import mistsim as ms
 
+    kw = {} if horizon_frame is None else {"horizon_frame": horizon_frame}
     beam = ms.Beam(
         gain,
         freqs,
         sampling="mwss",
         horizon=horizon,
         beam_az_rot=beam_az_rot,
+        **kw,
     )
     tg = tgnd if normalization == "default" else 0.0
     sim = ms.Simulator(
