@@ -91,6 +91,17 @@ VARIANTS = [
         "brackets the edge from the other side.",
     },
     {
+        "key": "edge_unmirrored",
+        "label": "half-weight edge, unmirrored",
+        "after": "epoch",
+        "times": "raul",
+        "mirror": False,
+        "mask": "half",
+        "tests": [0],
+        "change": "The half-weight edge row on mistsim's own (right-handed) "
+        "beam azimuth: the edge fix without matching Raul's phi = AZ.",
+    },
+    {
         "key": "lmax179",
         "label": "lmax 179",
         "after": "edge",

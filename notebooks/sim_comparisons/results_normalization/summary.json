@@ -1,6 +1,6 @@
 {
  "provenance": {
-  "mistsim_commit": "aedbf63",
+  "mistsim_commit": "34fcc96",
   "mistsim_src_dirty": false,
   "croissant": "v5.3.0.dev4",
   "croissant_commit": "a83a986",
@@ -204,6 +204,19 @@
    "rel_mean_abs": 0.00027174299420928256,
    "lag_fit_s": -17.456245715665332,
    "rms_after_lag_fit_K": 1.3475579943678624
+  },
+  "test0/edge_unmirrored": {
+   "mean_K": -0.09104433310615574,
+   "rms_K": 0.28109616300151424,
+   "mean_abs_K": 0.18982507496168272,
+   "max_abs_K": 2.3784537187657406,
+   "min_K": -2.3784537187657406,
+   "max_K": 1.4532749323279859,
+   "argmax_lst_h": 19.676288172901415,
+   "argmax_freq_MHz": 40.0,
+   "rel_mean_abs": 6.940627807694556e-05,
+   "lag_fit_s": -0.15966228714902891,
+   "rms_after_lag_fit_K": 0.28106833647223883
   },
   "test0/lmax179": {
    "mean_K": -0.09127284202979888,
