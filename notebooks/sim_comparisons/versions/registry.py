@@ -90,9 +90,9 @@ RUNS = [
             "East, counter-clockwise, so a North-pointing dipole needed "
             "90. The Feb run passed the default 0.",
             "get_rot_mat built the topocentric frame as North-East-Up, "
-            "a left-handed frame (det = -1). That turned the beam about "
-            "180 deg in azimuth: for a two-fold symmetric dipole, "
-            "almost the right answer for the wrong input.",
+            "a left-handed frame (det = -1). At MARS that turned the "
+            "beam ~90 deg in azimuth, so the default 0 put the dipole "
+            "N-S: the right answer for the wrong input.",
         ],
     },
     {
