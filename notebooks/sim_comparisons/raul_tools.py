@@ -336,15 +336,18 @@ def run_mistsim(
     return np.asarray(tant), np.asarray(fgnd)
 
 
-def precompute_sky_alm(sky_model, freqs, times_jd, gain):
-    """Sky alm in the CIRS frame of times_jd[0] (location-free)."""
-    import mistsim as ms
+def precompute_sky_alm(sky_model, times_jd):
+    """Sky alm in the CIRS frame of times_jd[0] (location-free).
 
-    beam = ms.Beam(gain, freqs, sampling="mwss")
-    sim = ms.Simulator(
-        beam, sky_model, times_jd, freqs, 0.0, 0.0, lmax=100, Tgnd=0.0
+    The same alm as ``Simulator(...).precompute_sky_alm()`` for any site
+    with these times: croissant's ``simulation_epoch`` is the epoch the
+    Simulator uses.
+    """
+    import croissant as cro
+
+    return sky_model.compute_alm_eq(
+        world="earth", et=cro.simulation_epoch(times_jd)
     )
-    return sim.precompute_sky_alm()
 
 
 # ------------------------------------------------------------------

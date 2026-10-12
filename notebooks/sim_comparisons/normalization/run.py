@@ -150,9 +150,7 @@ def main():
         key = (round(float(times_jd[0]), 9), niter)
         if key not in sky_alm:
             if niter == 0:
-                sky_alm[key] = rt.precompute_sky_alm(
-                    sky_model, freqs, times_jd, gain
-                )
+                sky_alm[key] = rt.precompute_sky_alm(sky_model, times_jd)
             else:
                 csky = cro.Sky(
                     sky,

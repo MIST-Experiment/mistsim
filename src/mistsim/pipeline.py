@@ -243,7 +243,9 @@ def setup_sky(config):
     lmax = obs_cfg["lmax"]
     # Truth in the frame of the Simulator's beam alm and phases.
     times = _make_times(obs_cfg)
-    sky_alm = sky.compute_alm_eq(world="earth", et=_sim_epoch(times))
+    sky_alm = sky.compute_alm_eq(
+        world="earth", et=cro.simulation_epoch(times.jd)
+    )
     sky_alm = cro.utils.reduce_lmax(sky_alm, lmax)
     x_packed = np.asarray(mapmaking.pack_s2fft_to_real(sky_alm))
     x_hp = np.asarray(mapmaking.alm1d_to_hp(x_packed))
@@ -306,7 +308,9 @@ def setup_sky_multi_freq(config):
         sampling=sampling,
         coord="galactic",
     )
-    sky_alm_full = sky.compute_alm_eq(world="earth", et=_sim_epoch(times))
+    sky_alm_full = sky.compute_alm_eq(
+        world="earth", et=cro.simulation_epoch(times.jd)
+    )
 
     # Truth at mapmaking lmax
     sky_alm = cro.utils.reduce_lmax(sky_alm_full, lmax)
@@ -1279,7 +1283,9 @@ def _prepare_freq_data(
 
     # --- Truth / prior sky ---
     if x_packed is None:
-        sky_alm_full = sky.compute_alm_eq(world="earth", et=_sim_epoch(times))
+        sky_alm_full = sky.compute_alm_eq(
+            world="earth", et=cro.simulation_epoch(times.jd)
+        )
         sky_alm = cro.utils.reduce_lmax(sky_alm_full, lmax)
         nalm = (lmax + 1) ** 2
         x_packed_flat = np.asarray(mapmaking.pack_s2fft_to_real(sky_alm))
@@ -1617,16 +1623,6 @@ def _make_times(obs):
         N_times=n_times,
         delta_t=obs["n_sidereal_days"] * SIDEREAL_DAY / n_times,
     )
-
-
-def _sim_epoch(times):
-    """Reference epoch of croissant's simulation frame for ``times``.
-
-    Equals ``Simulator.et_ref`` for a Simulator given ``times.jd``: the
-    frame is CIRS at ``times[0]``, so a sky computed with this epoch
-    shares the frame of that Simulator's beam alm and phases.
-    """
-    return cro.rotations.jd_to_et(Time(times.jd[0], format="jd").tdb.jd)
 
 
 def _time_spacing(obs, freqs):
