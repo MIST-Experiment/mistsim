@@ -2,7 +2,6 @@ import warnings
 
 import croissant as cro
 import jax.numpy as jnp
-from croissant.horizon import _horizon_in_beam_frame
 
 # mistsim's ground grid is the beam grid as it is at beam_az_rot = 0
 # (phi = 0 North, phi = 90 deg West, compass azimuth A = -phi). Croissant's
@@ -14,21 +13,17 @@ _GROUND_GRID_OFFSET_DEG = 90.0
 def _to_croissant_ground_grid(horizon, sampling, spatial_shape):
     """Move a mask from mistsim's ground grid onto croissant's.
 
-    Croissant's own periodic shift does the work: it is exact when 90 deg
+    ``croissant.rotate_horizon`` does the work: it is exact when 90 deg
     is a whole number of grid columns (the 1-deg MWSS grid, and every
     HEALPix ring) and linear interpolation otherwise. Scalars and
-    theta-only masks come back unchanged.
+    theta-only masks come back unchanged. A HEALPix mask must match the
+    beam's nside.
     """
     nside = None
     if sampling == "healpix":
         nside = int(round((spatial_shape[0] / 12) ** 0.5))
-    return _horizon_in_beam_frame(
-        jnp.asarray(horizon),
-        "topocentric",
-        _GROUND_GRID_OFFSET_DEG,
-        sampling,
-        spatial_shape,
-        nside,
+    return cro.rotate_horizon(
+        jnp.asarray(horizon), _GROUND_GRID_OFFSET_DEG, sampling, nside=nside
     )
 
 
