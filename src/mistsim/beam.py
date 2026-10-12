@@ -38,6 +38,8 @@ class Beam(cro.Beam):
         beam_tilt=0.0,
         lmax=None,
         horizon_frame="topocentric",
+        horizon_theta=None,
+        horizon_subsamples=1,
     ):
         """
         Beam pattern object. Holds the beam pattern in local antenna
@@ -82,8 +84,7 @@ class Beam(cro.Beam):
             (mod 360 deg), and it stays there whatever `beam_az_rot` is.
             If None, the horizon is at theta = 90 degrees with fractional
             boundary cells (croissant's default). For a horizon given as
-            a function of azimuth, ``croissant.horizon_weights`` builds
-            fractional boundary weights on regular grids.
+            an angle, pass `horizon_theta` instead.
         beam_az_rot : float
             Azimuthal rotation of the beam in degrees. The rotation is
             defined in the astronomy convention, i.e., the angle
@@ -121,6 +122,21 @@ class Beam(cro.Beam):
             `beam_az_rot`) and soften sharp edges otherwise. The `horizon`
             attribute holds croissant's ground-grid weights;
             ``horizon_in_beam_frame`` gives the weights actually applied.
+        horizon_theta : float, callable, or None
+            Horizon colatitude in radians, from which croissant builds
+            fractional weights on the beam's own grid (see
+            ``croissant.Beam``). A scalar applies at every azimuth, in
+            either frame. A callable ``theta_h(A)`` takes compass azimuth
+            ``A`` in radians (North = 0, East = pi/2), so it needs none of
+            the ground-grid conversion above; it requires
+            ``horizon_frame="topocentric"``. For terrain elevation
+            ``elev(A)``, pass ``lambda A: np.pi / 2 - elev(A)``. Mutually
+            exclusive with `horizon`.
+        horizon_subsamples : int
+            For a callable `horizon_theta`: the number of azimuths across
+            each grid column at which it is read, the weights being
+            averaged (croissant's ``horizon_subsamples``). Default 1
+            reads the column centre.
 
         Raises
         ------
@@ -153,4 +169,6 @@ class Beam(cro.Beam):
             beam_rot=beam_rot,
             beam_tilt=beam_tilt,
             horizon_frame=horizon_frame,
+            horizon_theta=horizon_theta,
+            horizon_subsamples=horizon_subsamples,
         )

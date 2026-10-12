@@ -226,3 +226,81 @@ def test_topocentric_fgnd_matches_manual_counter_rotation():
         fgnd.append(f_topo)
     # the lobe points East at beam_az_rot = 90, into the sector
     assert fgnd[1] > fgnd[0]
+
+
+# ------------------------------------------- horizon_theta pass-through
+def _sector_profile(lo=80.0, hi=100.0, theta_h=60.0):
+    """horizon_theta for the sector of ``_ground_sector_mask``: blocked
+    below ``theta_h`` at compass azimuths [lo, hi], open elsewhere."""
+
+    def profile(A):
+        azimuth = jnp.mod(jnp.rad2deg(A), 360.0)
+        inside = (azimuth >= lo) & (azimuth <= hi)
+        return jnp.where(inside, jnp.deg2rad(theta_h), jnp.pi)
+
+    return profile
+
+
+@pytest.mark.parametrize("horizon_frame", ["topocentric", "beam"])
+def test_horizon_theta_scalar_is_forwarded(horizon_frame):
+    data = _asymmetric_lobe()
+    freqs = jnp.array([50.0])
+    beam = Beam(data, freqs, horizon_theta=1.3, horizon_frame=horizon_frame)
+    expected = cro.Beam(
+        data,
+        freqs,
+        sampling="mwss",
+        horizon_theta=1.3,
+        horizon_frame=horizon_frame,
+    )
+    np.testing.assert_array_equal(beam.horizon, expected.horizon)
+
+
+@pytest.mark.parametrize("beam_az_rot", [0.0, 40.0, 233.0])
+def test_horizon_theta_profile_stays_on_the_ground(beam_az_rot):
+    """A compass-azimuth profile needs no ground-grid shift: mistsim
+    hands it to croissant, whose weights in the beam frame match a
+    croissant Beam at the same compass heading."""
+    data = _asymmetric_lobe()
+    freqs = jnp.array([50.0])
+    profile = _sector_profile()
+    beam = Beam(data, freqs, horizon_theta=profile, beam_az_rot=beam_az_rot)
+    expected = cro.Beam(
+        data,
+        freqs,
+        sampling="mwss",
+        horizon_theta=profile,
+        horizon_frame="topocentric",
+        beam_rot=beam_az_rot - 90.0,
+    )
+    np.testing.assert_allclose(
+        beam.horizon_in_beam_frame,
+        expected.horizon_in_beam_frame,
+        rtol=0,
+        atol=1e-12,
+    )
+
+
+def test_horizon_subsamples_is_forwarded():
+    data = _asymmetric_lobe()
+    freqs = jnp.array([50.0])
+    profile = _sector_profile(lo=80.3, hi=99.6)
+    kwargs = {"horizon_theta": profile, "horizon_subsamples": 4}
+    beam = Beam(data, freqs, **kwargs)
+    expected = cro.Beam(
+        data, freqs, sampling="mwss", horizon_frame="topocentric", **kwargs
+    )
+    np.testing.assert_array_equal(beam.horizon, expected.horizon)
+    one = Beam(data, freqs, horizon_theta=profile)
+    assert not np.array_equal(beam.horizon, one.horizon)
+
+
+def test_horizon_and_horizon_theta_are_exclusive():
+    data = jnp.ones((1, 181, 360))
+    with pytest.raises(ValueError, match="not both"):
+        Beam(
+            data,
+            jnp.array([50.0]),
+            horizon=_ground_sector_mask(),
+            horizon_theta=1.3,
+        )
