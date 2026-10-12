@@ -175,9 +175,7 @@ def test_ground_fraction_matches_flat_horizon(
 
 @pytest.mark.parametrize("builder", BUILDERS)
 @pytest.mark.parametrize("horizon_max_theta", [None, 80])
-def test_degree_theta_beam_file_rejected(
-    tmp_path, builder, horizon_max_theta
-):
+def test_degree_theta_beam_file_rejected(tmp_path, builder, horizon_max_theta):
     """Beam files must store theta in radians."""
     theta = np.arange(NTHETA, dtype=float)  # 0..180 deg
     cfg = {"beam_file": _write_beam(tmp_path / "beam.npz", theta)}

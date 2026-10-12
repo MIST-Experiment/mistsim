@@ -5,7 +5,6 @@ import jax.numpy as jnp
 
 
 class Sky(cro.Sky):
-
     def __init__(self, data, freqs, sampling="healpix", coord="galactic"):
         """
         Object that holds the sky model.

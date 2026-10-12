@@ -8,6 +8,7 @@ npix = 768  # nside=8
 sky_data = jnp.arange(npix)
 sky_data = jnp.repeat(sky_data[None, :], len(freqs), axis=0)
 
+
 def test_coord_invalid():
     with pytest.raises(ValueError):  # works in croissant but not mistsim
         msky.Sky(sky_data, freqs, sampling="healpix", coord="mcmf")
@@ -15,6 +16,7 @@ def test_coord_invalid():
     # these works
     msky.Sky(sky_data, freqs, sampling="healpix", coord="equatorial")
     msky.Sky(sky_data, freqs, sampling="healpix", coord="galactic")
+
 
 def test_sky_alm():
     """
@@ -43,6 +45,7 @@ def test_sky_alm():
         salm_class.compute_alm_eq(world="earth"),
         salm_class.compute_alm_eq(world="sun"),  # nonsense but ignored
     )
+
 
 def test_sky_alm_follows_simulation_epoch():
     """

@@ -1,4 +1,5 @@
 """Tests for the beam module."""
+
 import warnings
 
 import croissant as cro
@@ -35,9 +36,7 @@ def test_beam_az_rot_conversion(beam_az_rot):
     freq = jnp.array([100.0])
     beam = Beam(data, freq, sampling="healpix", beam_az_rot=beam_az_rot)
     expected = beam_az_rot - 90.0
-    np.testing.assert_allclose(
-        float(beam.beam_rot), expected, atol=1e-12
-    )
+    np.testing.assert_allclose(float(beam.beam_rot), expected, atol=1e-12)
 
 
 def test_beam_az_rot_matches_croissant():

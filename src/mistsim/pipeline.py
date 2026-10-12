@@ -154,8 +154,7 @@ def _parse_freqs(config):
         parts = val.split(":")
         if len(parts) != 2:
             raise ValueError(
-                f"Invalid freq range string {val!r}. "
-                "Expected 'start:stop'."
+                f"Invalid freq range string {val!r}. Expected 'start:stop'."
             )
         return list(range(int(parts[0]), int(parts[1])))
     return [int(v) for v in val]
@@ -1206,9 +1205,9 @@ def posterior_eigenmodes(Vh_modes, Sigma, cl_prior, lmax, nside=128):
     maps = np.array(
         [
             hp.alm2map(
-                np.asarray(
-                    mapmaking.alm1d_to_hp(s12 * Vh_modes[k])
-                ).astype(np.complex128),
+                np.asarray(mapmaking.alm1d_to_hp(s12 * Vh_modes[k])).astype(
+                    np.complex128
+                ),
                 nside,
             )
             for k in range(n_modes)
@@ -1298,9 +1297,7 @@ def _prepare_freq_data(
     beam_alms_per_site = []
     phases_per_site = []
     for s, site in enumerate(config["sites"]):
-        beam = _build_multi_freq_beam(
-            site, sim_freqs_arr
-        )
+        beam = _build_multi_freq_beam(site, sim_freqs_arr)
         sim = Simulator(
             beam,
             sky,
@@ -2211,9 +2208,7 @@ def load_and_concat_sim_data(paths, target_freqs_mhz=None):
     for b in beams[1:]:
         target_freqs = np.intersect1d(target_freqs, b["freqs"])
     if target_freqs_mhz is not None:
-        target_freqs = np.intersect1d(
-            target_freqs, np.array(target_freqs_mhz)
-        )
+        target_freqs = np.intersect1d(target_freqs, np.array(target_freqs_mhz))
 
     # Select and concatenate y for each beam
     y_parts = []

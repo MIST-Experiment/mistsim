@@ -6,7 +6,6 @@ from . import sky as skymod
 
 
 class Simulator(cro.Simulator):
-
     def __init__(
         self,
         beam,
@@ -91,7 +90,6 @@ class Simulator(cro.Simulator):
             world="earth",
             Tgnd=Tgnd,
         )
-
 
 
 def correct_ground_loss(vis, fgnd, Tgnd):

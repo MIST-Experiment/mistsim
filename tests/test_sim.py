@@ -15,17 +15,20 @@ times_jd = Time("2024-01-01T00:00:00").jd + jnp.arange(10) * 0.1
 lon = 0.0
 lat = -30.0
 
+
 @pytest.fixture
 def beam():
     d = jnp.ones((freqs.size, npix)) * (freqs[:, None] / 100) ** 2
     b = ms.Beam(d, freqs, sampling="healpix")
     return b
 
+
 @pytest.fixture
 def sky():
     d = 180 * jnp.arange(npix)[None, :] * (freqs[:, None] / 180) ** -2.5
     s = ms.Sky(d, freqs, sampling="healpix", coord="galactic")
     return s
+
 
 @pytest.fixture
 def vis(beam, sky):
@@ -39,6 +42,7 @@ def vis(beam, sky):
     )
     v = sim.sim()
     return v
+
 
 def test_sky_alm(beam, sky, vis):
     """

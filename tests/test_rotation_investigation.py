@@ -31,6 +31,7 @@ jax.config.update("jax_enable_x64", True)
 # Helpers
 # -------------------------------------------------------------------
 
+
 def _get_old_rot_mat(from_frame, to_frame):
     """
     Reproduce the OLD get_rot_mat (before NEU→ENU swap).
@@ -71,6 +72,7 @@ def _point_source_sky(nside, freqs, ra_deg, dec_deg, flux=1.0):
 # -------------------------------------------------------------------
 # Test 1: Verify rotate_flms convention (active vs passive)
 # -------------------------------------------------------------------
+
 
 def test_rotate_flms_convention():
     """
@@ -113,6 +115,7 @@ def test_rotate_flms_convention():
 # Test 2: Compare old vs new rotation matrices
 # -------------------------------------------------------------------
 
+
 def test_old_vs_new_rotation_matrices():
     """
     Compare Euler angles from:
@@ -133,22 +136,21 @@ def test_old_vs_new_rotation_matrices():
     print(f"det(R_new) = {np.linalg.det(R_new):.6f}")
     print(f"det(R_old) = {np.linalg.det(R_old):.6f}")
 
-    assert np.isclose(np.linalg.det(R_new), 1.0, atol=1e-10), \
+    assert np.isclose(np.linalg.det(R_new), 1.0, atol=1e-10), (
         "R_new should have det=+1"
-    assert np.isclose(np.linalg.det(R_old), -1.0, atol=1e-10), \
+    )
+    assert np.isclose(np.linalg.det(R_old), -1.0, atol=1e-10), (
         "R_old should have det=-1"
+    )
 
     eul_new = rotmat_to_eulerZYZ(R_new)
     eul_old = rotmat_to_eulerZYZ(R_old)
     eul_inv = rotmat_to_eulerZYZ(R_new.T)
 
     print(f"\nEuler angles (alpha, beta, gamma):")
-    print(f"  R_new:   ({eul_new[0]:.6f}, {eul_new[1]:.6f}, "
-          f"{eul_new[2]:.6f})")
-    print(f"  R_old:   ({eul_old[0]:.6f}, {eul_old[1]:.6f}, "
-          f"{eul_old[2]:.6f})")
-    print(f"  R_new^T: ({eul_inv[0]:.6f}, {eul_inv[1]:.6f}, "
-          f"{eul_inv[2]:.6f})")
+    print(f"  R_new:   ({eul_new[0]:.6f}, {eul_new[1]:.6f}, {eul_new[2]:.6f})")
+    print(f"  R_old:   ({eul_old[0]:.6f}, {eul_old[1]:.6f}, {eul_old[2]:.6f})")
+    print(f"  R_new^T: ({eul_inv[0]:.6f}, {eul_inv[1]:.6f}, {eul_inv[2]:.6f})")
 
     # Check if old Euler angles are closer to the inverse
     diff_new = np.array(eul_old) - np.array(eul_new)
@@ -174,6 +176,7 @@ def test_old_vs_new_rotation_matrices():
 # Test 3: Beam rotation at North Pole
 # -------------------------------------------------------------------
 
+
 def test_beam_rotation_north_pole():
     """
     At lat=90, zenith = celestial north pole (Dec=90°).
@@ -189,7 +192,7 @@ def test_beam_rotation_north_pole():
     # Gaussian beam peaked at zenith (theta=0)
     theta, phi = hp.pix2ang(nside, np.arange(npix))
     sigma = np.radians(20)
-    beam_data = np.exp(-theta**2 / (2 * sigma**2))
+    beam_data = np.exp(-(theta**2) / (2 * sigma**2))
     beam_data = jnp.array(beam_data[None, :])  # (1, npix)
 
     beam = Beam(beam_data, freqs, sampling="healpix", niter=3)
@@ -241,8 +244,10 @@ def test_beam_rotation_north_pole():
         peak_theta, peak_phi = hp.pix2ang(nside, peak_pix)
         peak_dec = 90.0 - np.degrees(peak_theta)
         peak_ra = np.degrees(peak_phi)
-        print(f"  {label}: peak at Dec={peak_dec:.1f}°, "
-              f"RA={peak_ra:.1f}° (θ={np.degrees(peak_theta):.1f}°)")
+        print(
+            f"  {label}: peak at Dec={peak_dec:.1f}°, "
+            f"RA={peak_ra:.1f}° (θ={np.degrees(peak_theta):.1f}°)"
+        )
 
     # At north pole, zenith = Dec~90. Correct rotation should
     # preserve peak near Dec=90 (theta~0 in equatorial).
@@ -266,6 +271,7 @@ def test_beam_rotation_north_pole():
 # Test 4: Beam rotation at mid-latitude
 # -------------------------------------------------------------------
 
+
 def test_beam_rotation_midlat():
     """
     At lat=45, zenith = Dec=45° (approximately, depends on time).
@@ -280,7 +286,7 @@ def test_beam_rotation_midlat():
     # Gaussian beam peaked at zenith (theta=0)
     theta, phi = hp.pix2ang(nside, np.arange(npix))
     sigma = np.radians(20)
-    beam_data = np.exp(-theta**2 / (2 * sigma**2))
+    beam_data = np.exp(-(theta**2) / (2 * sigma**2))
     beam_data = jnp.array(beam_data[None, :])
     beam = Beam(beam_data, freqs, sampling="healpix", niter=3)
     beam_alm = beam.compute_alm()
@@ -296,8 +302,7 @@ def test_beam_rotation_midlat():
     ).transform_to("fk5")
     expected_dec = zenith_eq.dec.deg
     expected_ra = zenith_eq.ra.deg
-    print(f"  Expected zenith: RA={expected_ra:.1f}°, "
-          f"Dec={expected_dec:.1f}°")
+    print(f"  Expected zenith: RA={expected_ra:.1f}°, Dec={expected_dec:.1f}°")
 
     R_new = get_rot_mat(topo, "fk5")
     R_old = _get_old_rot_mat(topo, "fk5")
@@ -343,19 +348,18 @@ def test_beam_rotation_midlat():
 
     # The correct rotation should place the peak closest to expected
     best = min(results, key=results.get)
-    print(f"\n  Best match: {best} "
-          f"(sep={results[best]:.1f}°)")
+    print(f"\n  Best match: {best} (sep={results[best]:.1f}°)")
 
     # R_new should be the closest (or at least within ~5° for nside=32)
     assert results["R_new (det=+1)"] < 10.0, (
-        f"R_new peak too far from expected: "
-        f"{results['R_new (det=+1)']:.1f}°"
+        f"R_new peak too far from expected: {results['R_new (det=+1)']:.1f}°"
     )
 
 
 # -------------------------------------------------------------------
 # Test 5: Tighten test_beam_enu_east_direction
 # -------------------------------------------------------------------
+
 
 def test_beam_enu_east_tighter():
     """
@@ -401,12 +405,24 @@ def test_beam_enu_east_tighter():
 
     times_jd = jnp.array([t0.jd])
     sim_east = Simulator(
-        beam, sky_east, times_jd, freqs, lon, lat,
-        world="earth", Tgnd=0.0,
+        beam,
+        sky_east,
+        times_jd,
+        freqs,
+        lon,
+        lat,
+        world="earth",
+        Tgnd=0.0,
     )
     sim_north = Simulator(
-        beam, sky_north, times_jd, freqs, lon, lat,
-        world="earth", Tgnd=0.0,
+        beam,
+        sky_north,
+        times_jd,
+        freqs,
+        lon,
+        lat,
+        world="earth",
+        Tgnd=0.0,
     )
 
     vis_east = sim_east.sim()[0, 0]
@@ -418,8 +434,10 @@ def test_beam_enu_east_tighter():
     actual_ratio = float(vis_east / vis_north)
     print(f"  Expected ratio: {expected_ratio:.6f}")
     print(f"  Actual ratio:   {actual_ratio:.6f}")
-    print(f"  Relative error: "
-          f"{abs(actual_ratio - expected_ratio) / expected_ratio:.4f}")
+    print(
+        f"  Relative error: "
+        f"{abs(actual_ratio - expected_ratio) / expected_ratio:.4f}"
+    )
 
     # Report rather than assert — point source tests have inherent
     # SHT truncation error. The key comparison is R_new vs R_old.
@@ -451,8 +469,10 @@ def test_beam_enu_east_tighter():
     if vis_north_old != 0:
         old_ratio = float(vis_east_old / vis_north_old)
         print(f"\n  Old rotation ratio: {old_ratio:.6f}")
-        print(f"  Old relative error: "
-              f"{abs(old_ratio - expected_ratio) / expected_ratio:.4f}")
+        print(
+            f"  Old relative error: "
+            f"{abs(old_ratio - expected_ratio) / expected_ratio:.4f}"
+        )
     else:
         print("\n  Old rotation: vis_north=0, cannot compute ratio")
 
@@ -460,6 +480,7 @@ def test_beam_enu_east_tighter():
 # -------------------------------------------------------------------
 # Test 6: healpy cross-check
 # -------------------------------------------------------------------
+
 
 def test_healpy_crosscheck():
     """
@@ -478,8 +499,8 @@ def test_healpy_crosscheck():
 
     # Asymmetric beam pattern
     theta, phi = hp.pix2ang(nside, np.arange(npix))
-    beam_map = np.exp(-theta**2 / (2 * np.radians(30)**2))
-    beam_map *= (1 + 0.3 * np.cos(phi))
+    beam_map = np.exp(-(theta**2) / (2 * np.radians(30) ** 2))
+    beam_map *= 1 + 0.3 * np.cos(phi)
 
     lon, lat = 0.0, 45.0
     t0 = AstroTime("2022-06-21 00:00:00")
@@ -494,8 +515,10 @@ def test_healpy_crosscheck():
         alt=90 * u.deg, az=0 * u.deg, frame=topo
     ).transform_to("fk5")
     sc_expected = SkyCoord(ra=zenith_eq.ra, dec=zenith_eq.dec)
-    print(f"  Expected zenith: Dec={zenith_eq.dec.deg:.1f}°, "
-          f"RA={zenith_eq.ra.deg:.1f}°")
+    print(
+        f"  Expected zenith: Dec={zenith_eq.dec.deg:.1f}°, "
+        f"RA={zenith_eq.ra.deg:.1f}°"
+    )
 
     # --- s2fft/croissant rotation ---
     freqs = jnp.array([75.0])
@@ -510,15 +533,11 @@ def test_healpy_crosscheck():
     )(beam_alm)
 
     # Convert s2fft rotated alm to map via healpy for peak finding
-    alm_s2fft_hp = np.zeros(
-        hp.Alm.getsize(lmax), dtype=np.complex128
-    )
+    alm_s2fft_hp = np.zeros(hp.Alm.getsize(lmax), dtype=np.complex128)
     for ell in range(L):
         for m in range(ell + 1):
             idx = hp.Alm.getidx(lmax, ell, m)
-            alm_s2fft_hp[idx] = np.array(
-                beam_eq_s2fft[0, ell, L - 1 + m]
-            )
+            alm_s2fft_hp[idx] = np.array(beam_eq_s2fft[0, ell, L - 1 + m])
     map_s2fft = hp.alm2map(alm_s2fft_hp, nside, verbose=False)
     peak = np.argmax(map_s2fft)
     t, p = hp.pix2ang(nside, peak)
@@ -527,23 +546,24 @@ def test_healpy_crosscheck():
         dec=(90 - np.degrees(t)) * u.deg,
     )
     sep = sc_expected.separation(sc).deg
-    print(f"  s2fft(R): Dec={90 - np.degrees(t):.1f}°, "
-          f"RA={np.degrees(p):.1f}° (sep={sep:.1f}°)")
+    print(
+        f"  s2fft(R): Dec={90 - np.degrees(t):.1f}°, "
+        f"RA={np.degrees(p):.1f}° (sep={sep:.1f}°)"
+    )
 
     # --- healpy rotation (own alm pipeline) ---
     alm_hp = hp.map2alm(beam_map, lmax=lmax)
 
     from croissant.rotations import rotmat_to_eulerZYX
+
     eul_zyx = rotmat_to_eulerZYX(R_new)
     eul_zyx_inv = rotmat_to_eulerZYX(R_new.T)
 
     cases = [
         ("ZYZ(R)", eul_zyz, "ZYZ"),
         ("ZYZ(R^T)", rotmat_to_eulerZYZ(R_new.T), "ZYZ"),
-        ("ZYZ(-α,-β,-γ)",
-         (-eul_zyz[0], -eul_zyz[1], -eul_zyz[2]), "ZYZ"),
-        ("ZYZ(γ,β,α)",
-         (eul_zyz[2], eul_zyz[1], eul_zyz[0]), "ZYZ"),
+        ("ZYZ(-α,-β,-γ)", (-eul_zyz[0], -eul_zyz[1], -eul_zyz[2]), "ZYZ"),
+        ("ZYZ(γ,β,α)", (eul_zyz[2], eul_zyz[1], eul_zyz[0]), "ZYZ"),
         ("ZYX(R)", eul_zyx, "ZYX"),
         ("ZYX(R^T)", eul_zyx_inv, "ZYX"),
     ]
@@ -561,14 +581,15 @@ def test_healpy_crosscheck():
             dec=(90 - np.degrees(t)) * u.deg,
         )
         sep = sc_expected.separation(sc).deg
-        print(f"  hp {label}: Dec={90 - np.degrees(t):.1f}°, "
-              f"RA={np.degrees(p):.1f}° (sep={sep:.1f}°)")
+        print(
+            f"  hp {label}: Dec={90 - np.degrees(t):.1f}°, "
+            f"RA={np.degrees(p):.1f}° (sep={sep:.1f}°)"
+        )
         if sep < best_sep:
             best_sep = sep
             best_label = label
 
-    print(f"\n  Best healpy match: {best_label} "
-          f"(sep={best_sep:.1f}°)")
+    print(f"\n  Best healpy match: {best_label} (sep={best_sep:.1f}°)")
     if best_sep < 5.0:
         print("  GOOD: healpy confirms rotation direction")
 

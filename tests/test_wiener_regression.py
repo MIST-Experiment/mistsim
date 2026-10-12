@@ -172,9 +172,7 @@ class TestWienerMath:
         D = Sigma / (1 + Sigma**2)
         x_tilde_svd = Vh.T @ np.diag(D) @ U.T @ p["y_tilde"]
 
-        np.testing.assert_allclose(
-            x_tilde_svd, p["x_tilde_ref"], rtol=1e-10
-        )
+        np.testing.assert_allclose(x_tilde_svd, p["x_tilde_ref"], rtol=1e-10)
 
     def test_whitening_is_correct(self, wiener_problem):
         """Atilde = N^{-1/2} A S^{1/2} matches make_Atilde operator."""
@@ -259,9 +257,14 @@ class TestSVDWiener:
         nvec = p["nalm"]
 
         x_svd_hp, D = pipeline.wiener_filter(
-            U, Sigma, Vh, nvec,
-            p["Ndiag"], p["Sdiag"],
-            p["y_noiseless"], p["noise"],
+            U,
+            Sigma,
+            Vh,
+            nvec,
+            p["Ndiag"],
+            p["Sdiag"],
+            p["y_noiseless"],
+            p["noise"],
         )
 
         x_naive_hp = np.asarray(mapmaking.alm1d_to_hp(p["x_naive"]))
@@ -288,9 +291,14 @@ class TestSVDWiener:
             idx = np.argsort(-Sigma)
             U, Sigma, Vh = U[:, idx], Sigma[idx], Vh[idx]
             x_svd_hp, _ = pipeline.wiener_filter(
-                U, Sigma, Vh, k,
-                p["Ndiag"], p["Sdiag"],
-                p["y_noiseless"], p["noise"],
+                U,
+                Sigma,
+                Vh,
+                k,
+                p["Ndiag"],
+                p["Sdiag"],
+                p["y_noiseless"],
+                p["noise"],
             )
             err = np.linalg.norm(x_svd_hp - x_naive_hp)
             err /= np.linalg.norm(x_naive_hp)
@@ -331,16 +339,18 @@ class TestCGWiener:
         )
 
         x_cg_hp, info = pipeline.wiener_filter_cg(
-            atilde_fwd, atilde_adj,
-            p["Ndiag"], p["Sdiag"],
-            p["y_noiseless"], p["noise"],
-            tol=1e-12, maxiter=2000,
+            atilde_fwd,
+            atilde_adj,
+            p["Ndiag"],
+            p["Sdiag"],
+            p["y_noiseless"],
+            p["noise"],
+            tol=1e-12,
+            maxiter=2000,
         )
 
         x_naive_hp = np.asarray(mapmaking.alm1d_to_hp(p["x_naive"]))
-        np.testing.assert_allclose(
-            np.asarray(x_cg_hp), x_naive_hp, rtol=1e-5
-        )
+        np.testing.assert_allclose(np.asarray(x_cg_hp), x_naive_hp, rtol=1e-5)
 
     def test_solves_normal_equations(self, wiener_problem):
         """CG output satisfies (Atilde^H Atilde + I) x~ = Atilde^H y~."""
@@ -351,16 +361,20 @@ class TestCGWiener:
 
         Nm12 = jnp.asarray(p["Nm12"])
         S12 = jnp.asarray(p["S12"])
-        y_tilde = Nm12 * (jnp.asarray(p["y_noiseless"]) + jnp.asarray(
-            p["noise"]
-        ))
+        y_tilde = Nm12 * (
+            jnp.asarray(p["y_noiseless"]) + jnp.asarray(p["noise"])
+        )
         rhs = atilde_adj(y_tilde)
 
         x_cg_hp, _ = pipeline.wiener_filter_cg(
-            atilde_fwd, atilde_adj,
-            p["Ndiag"], p["Sdiag"],
-            p["y_noiseless"], p["noise"],
-            tol=1e-12, maxiter=2000,
+            atilde_fwd,
+            atilde_adj,
+            p["Ndiag"],
+            p["Sdiag"],
+            p["y_noiseless"],
+            p["noise"],
+            tol=1e-12,
+            maxiter=2000,
         )
 
         # Recover x_tilde from x_rec = S^{1/2} x_tilde
@@ -368,9 +382,9 @@ class TestCGWiener:
         x_tilde = x_rec_1d / p["S12"]
 
         # Check residual
-        lhs = np.asarray(
-            atilde_adj(atilde_fwd(jnp.asarray(x_tilde)))
-        ) + x_tilde
+        lhs = (
+            np.asarray(atilde_adj(atilde_fwd(jnp.asarray(x_tilde)))) + x_tilde
+        )
         np.testing.assert_allclose(lhs, np.asarray(rhs), rtol=1e-8)
 
 
@@ -394,9 +408,14 @@ class TestAllMethodsAgree:
         Sigma = p["Sigma_full"]
         Vh = p["Vh_full"]
         x_svd_hp, _ = pipeline.wiener_filter(
-            U, Sigma, Vh, p["nalm"],
-            p["Ndiag"], p["Sdiag"],
-            p["y_noiseless"], p["noise"],
+            U,
+            Sigma,
+            Vh,
+            p["nalm"],
+            p["Ndiag"],
+            p["Sdiag"],
+            p["y_noiseless"],
+            p["noise"],
         )
 
         # --- CG ---
@@ -412,22 +431,32 @@ class TestAllMethodsAgree:
             p["Ndiag"], fwd, adj, p["Sdiag"]
         )
         x_cg_hp, _ = pipeline.wiener_filter_cg(
-            atilde_fwd, atilde_adj,
-            p["Ndiag"], p["Sdiag"],
-            p["y_noiseless"], p["noise"],
-            tol=1e-12, maxiter=2000,
+            atilde_fwd,
+            atilde_adj,
+            p["Ndiag"],
+            p["Sdiag"],
+            p["y_noiseless"],
+            p["noise"],
+            tol=1e-12,
+            maxiter=2000,
         )
 
         np.testing.assert_allclose(
-            x_svd_hp, x_naive_hp, rtol=1e-4,
+            x_svd_hp,
+            x_naive_hp,
+            rtol=1e-4,
             err_msg="SVD vs Naive",
         )
         np.testing.assert_allclose(
-            np.asarray(x_cg_hp), x_naive_hp, rtol=1e-5,
+            np.asarray(x_cg_hp),
+            x_naive_hp,
+            rtol=1e-5,
             err_msg="CG vs Naive",
         )
         np.testing.assert_allclose(
-            np.asarray(x_cg_hp), x_svd_hp, rtol=1e-4,
+            np.asarray(x_cg_hp),
+            x_svd_hp,
+            rtol=1e-4,
             err_msg="CG vs SVD",
         )
 
@@ -458,23 +487,34 @@ class TestRandomizedSVDWiener:
         # Full rank with oversampling for accuracy
         k = p["nalm"]
         U, Sigma, Vh = mapmaking.randomized_svd_jax(
-            atilde_fwd, atilde_adj,
-            p["nalm"], p["ndata"],
-            k=k, p=10, seed=0,
+            atilde_fwd,
+            atilde_adj,
+            p["nalm"],
+            p["ndata"],
+            k=k,
+            p=10,
+            seed=0,
         )
         U = np.asarray(U)
         Sigma = np.asarray(Sigma)
         Vh = np.asarray(Vh)
 
         x_rsvd_hp, D = pipeline.wiener_filter(
-            U, Sigma, Vh, k,
-            p["Ndiag"], p["Sdiag"],
-            p["y_noiseless"], p["noise"],
+            U,
+            Sigma,
+            Vh,
+            k,
+            p["Ndiag"],
+            p["Sdiag"],
+            p["y_noiseless"],
+            p["noise"],
         )
 
         x_naive_hp = np.asarray(mapmaking.alm1d_to_hp(p["x_naive"]))
         np.testing.assert_allclose(
-            x_rsvd_hp, x_naive_hp, rtol=1e-3,
+            x_rsvd_hp,
+            x_naive_hp,
+            rtol=1e-3,
         )
 
     def test_rsvd_singular_values_match_exact(self, wiener_problem):
@@ -494,9 +534,13 @@ class TestRandomizedSVDWiener:
 
         k = p["nalm"]
         _, Sigma_rsvd, _ = mapmaking.randomized_svd_jax(
-            atilde_fwd, atilde_adj,
-            p["nalm"], p["ndata"],
-            k=k, p=10, seed=0,
+            atilde_fwd,
+            atilde_adj,
+            p["nalm"],
+            p["ndata"],
+            k=k,
+            p=10,
+            seed=0,
         )
 
         np.testing.assert_allclose(
@@ -524,15 +568,23 @@ class TestRandomizedSVDWiener:
         errors = []
         for k in [5, 10, 15, 20, 25]:
             U, Sigma, Vh = mapmaking.randomized_svd_jax(
-                atilde_fwd, atilde_adj,
-                p["nalm"], p["ndata"],
-                k=k, p=10, seed=0,
+                atilde_fwd,
+                atilde_adj,
+                p["nalm"],
+                p["ndata"],
+                k=k,
+                p=10,
+                seed=0,
             )
             x_hp, _ = pipeline.wiener_filter(
-                np.asarray(U), np.asarray(Sigma), np.asarray(Vh),
+                np.asarray(U),
+                np.asarray(Sigma),
+                np.asarray(Vh),
                 k,
-                p["Ndiag"], p["Sdiag"],
-                p["y_noiseless"], p["noise"],
+                p["Ndiag"],
+                p["Sdiag"],
+                p["y_noiseless"],
+                p["noise"],
             )
             err = np.linalg.norm(x_hp - x_naive_hp)
             err /= np.linalg.norm(x_naive_hp)
@@ -575,9 +627,7 @@ class TestMultiFreqWiener:
                 AHNinvA + Sinv,
                 A_f.T @ np.diag(1.0 / Ndiag_f) @ (y_f + noise_f),
             )
-            x_naive_hp = np.asarray(
-                mapmaking.alm1d_to_hp(x_naive_f)
-            )
+            x_naive_hp = np.asarray(mapmaking.alm1d_to_hp(x_naive_f))
 
             # CG solve
             Ajax = jnp.asarray(A_f)
@@ -592,14 +642,20 @@ class TestMultiFreqWiener:
                 Ndiag_f, fwd, adj, Sdiag_f
             )
             x_cg_hp, _ = pipeline.wiener_filter_cg(
-                atilde_fwd, atilde_adj,
-                Ndiag_f, Sdiag_f,
-                y_f, noise_f,
-                tol=1e-12, maxiter=2000,
+                atilde_fwd,
+                atilde_adj,
+                Ndiag_f,
+                Sdiag_f,
+                y_f,
+                noise_f,
+                tol=1e-12,
+                maxiter=2000,
             )
 
             np.testing.assert_allclose(
-                np.asarray(x_cg_hp), x_naive_hp, rtol=1e-5,
+                np.asarray(x_cg_hp),
+                x_naive_hp,
+                rtol=1e-5,
                 err_msg=f"Frequency {f} mismatch",
             )
 
@@ -642,34 +698,45 @@ class TestMultiFreqWiener:
 
         # Solve freq 0
         x_cg_f0, _ = pipeline.wiener_filter_cg(
-            atilde_fwd, atilde_adj,
-            Ndiag, Sdiag,
-            A @ x1, noise1,
-            tol=1e-12, maxiter=2000,
+            atilde_fwd,
+            atilde_adj,
+            Ndiag,
+            Sdiag,
+            A @ x1,
+            noise1,
+            tol=1e-12,
+            maxiter=2000,
         )
 
         # Solve freq 1 (different signal/noise)
         x_cg_f1, _ = pipeline.wiener_filter_cg(
-            atilde_fwd, atilde_adj,
-            Ndiag, Sdiag,
-            A @ x2, noise2,
-            tol=1e-12, maxiter=2000,
+            atilde_fwd,
+            atilde_adj,
+            Ndiag,
+            Sdiag,
+            A @ x2,
+            noise2,
+            tol=1e-12,
+            maxiter=2000,
         )
 
         # They must differ (different inputs)
-        assert not np.allclose(
-            np.asarray(x_cg_f0), np.asarray(x_cg_f1)
-        )
+        assert not np.allclose(np.asarray(x_cg_f0), np.asarray(x_cg_f1))
 
         # Solve freq 0 again — must be identical (deterministic)
         x_cg_f0_again, _ = pipeline.wiener_filter_cg(
-            atilde_fwd, atilde_adj,
-            Ndiag, Sdiag,
-            A @ x1, noise1,
-            tol=1e-12, maxiter=2000,
+            atilde_fwd,
+            atilde_adj,
+            Ndiag,
+            Sdiag,
+            A @ x1,
+            noise1,
+            tol=1e-12,
+            maxiter=2000,
         )
         np.testing.assert_allclose(
-            np.asarray(x_cg_f0_again), np.asarray(x_cg_f0),
+            np.asarray(x_cg_f0_again),
+            np.asarray(x_cg_f0),
             rtol=1e-12,
         )
 
@@ -712,8 +779,8 @@ class TestNoiseScaling:
 
         for i in range(len(errors) - 1):
             assert errors[i + 1] > errors[i], (
-                f"Error did not increase: scale {i} -> {i+1}: "
-                f"{errors[i]:.6f} -> {errors[i+1]:.6f}"
+                f"Error did not increase: scale {i} -> {i + 1}: "
+                f"{errors[i]:.6f} -> {errors[i + 1]:.6f}"
             )
 
     def test_zero_noise_best_recovery(self):
@@ -778,10 +845,14 @@ class TestNoiseScaling:
                 Ndiag, fwd, adj, Sdiag
             )
             x_cg_hp, _ = pipeline.wiener_filter_cg(
-                atilde_fwd, atilde_adj,
-                Ndiag, Sdiag,
-                y, noise,
-                tol=1e-12, maxiter=2000,
+                atilde_fwd,
+                atilde_adj,
+                Ndiag,
+                Sdiag,
+                y,
+                noise,
+                tol=1e-12,
+                maxiter=2000,
             )
 
             # Convert back to packed 1d for fair comparison
@@ -791,6 +862,6 @@ class TestNoiseScaling:
 
         for i in range(len(errors) - 1):
             assert errors[i + 1] > errors[i], (
-                f"CG error did not increase: scale {i} -> {i+1}: "
-                f"{errors[i]:.6f} -> {errors[i+1]:.6f}"
+                f"CG error did not increase: scale {i} -> {i + 1}: "
+                f"{errors[i]:.6f} -> {errors[i + 1]:.6f}"
             )

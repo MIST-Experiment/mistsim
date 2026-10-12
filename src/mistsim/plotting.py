@@ -341,8 +341,14 @@ def plot_alm_error_heatmap(x_true, std_alm, lmax, lmax_plot=None):
 
 
 def plot_ell_freq_residual(
-    x_true, x_rec, lmax, freqs, lmax_plot=None, vmin=None, vmax=None,
-    ):
+    x_true,
+    x_rec,
+    lmax,
+    freqs,
+    lmax_plot=None,
+    vmin=None,
+    vmax=None,
+):
     """
     Heatmap of per-ell fractional residual power vs frequency.
 

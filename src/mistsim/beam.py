@@ -28,8 +28,6 @@ def _to_croissant_ground_grid(horizon, sampling, spatial_shape):
 
 
 class Beam(cro.Beam):
-
-
     def __init__(
         self,
         data,
