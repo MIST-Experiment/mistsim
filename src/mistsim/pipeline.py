@@ -401,7 +401,7 @@ def _horizon_from_beam_file(site_cfg, theta):
     if "horizon_max_theta" not in site_cfg:
         return None
     max_theta = np.deg2rad(site_cfg["horizon_max_theta"])
-    return np.asarray(cro.horizon_weights(theta, theta_h=max_theta))
+    return np.asarray(cro.horizon_weights(theta, horizon_theta=max_theta))
 
 
 def build_beam(site_cfg, sim_freq):

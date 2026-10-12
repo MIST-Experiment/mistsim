@@ -111,7 +111,7 @@ def test_horizon_weights_match_croissant(horizon_max_theta):
     cfg = {"beam_file": "beam.npz", "horizon_max_theta": horizon_max_theta}
     weights = pipeline._horizon_from_beam_file(cfg, THETA)
     expected = cro.horizon_weights(
-        THETA, theta_h=np.deg2rad(horizon_max_theta)
+        THETA, horizon_theta=np.deg2rad(horizon_max_theta)
     )
     assert weights.shape == expected.shape
     np.testing.assert_array_equal(weights, np.asarray(expected))
