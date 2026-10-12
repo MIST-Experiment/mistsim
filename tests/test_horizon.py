@@ -89,15 +89,17 @@ def test_no_horizon_max_theta_uses_default_horizon(tmp_path, builder):
         (45.25, 45, 0.75),
     ],
 )
+@pytest.mark.parametrize("builder", BUILDERS)
 def test_horizon_between_rows_is_linear_in_theta(
-    horizon_max_theta, boundary_row, boundary_weight
+    tmp_path, builder, horizon_max_theta, boundary_row, boundary_weight
 ):
     """The boundary row gets the open share of its cell in theta."""
-    cfg = {"beam_file": "beam.npz", "horizon_max_theta": horizon_max_theta}
-    weights = pipeline._horizon_from_beam_file(cfg, THETA)
-    assert weights.shape == (NTHETA, 1)
+    cfg = {
+        "beam_file": _write_beam(tmp_path / "beam.npz", THETA),
+        "horizon_max_theta": horizon_max_theta,
+    }
     np.testing.assert_allclose(
-        weights[:, 0],
+        _weights(_build(builder, cfg)),
         _flat_horizon_weights(boundary_row, boundary_weight),
         atol=1e-9,
     )
@@ -106,16 +108,39 @@ def test_horizon_between_rows_is_linear_in_theta(
 @pytest.mark.parametrize(
     "horizon_max_theta", [0.0, 10.0, 45.25, 80.0, 80.3, 90.0, 179.6, 180.0]
 )
-def test_horizon_weights_match_croissant(horizon_max_theta):
-    """The weights are croissant.horizon_weights for the same horizon."""
-    cfg = {"beam_file": "beam.npz", "horizon_max_theta": horizon_max_theta}
-    weights = pipeline._horizon_from_beam_file(cfg, THETA)
-    expected = cro.horizon_weights(
-        THETA, horizon_theta=np.deg2rad(horizon_max_theta)
+def test_horizon_weights_match_croissant(tmp_path, horizon_max_theta):
+    """The beam's weights are croissant's for the same horizon, on the
+    beam's own grid. The beam file's theta gives the same to round-off,
+    which is what the pipeline built itself before passing
+    horizon_theta to the beam."""
+    cfg = {
+        "beam_file": _write_beam(tmp_path / "beam.npz", THETA),
+        "horizon_max_theta": horizon_max_theta,
+    }
+    beam = _build(pipeline.build_beam, cfg)
+    theta_h = np.deg2rad(horizon_max_theta)
+    weights = np.asarray(beam.horizon)
+    np.testing.assert_array_equal(
+        weights,
+        np.asarray(cro.horizon_weights(beam.theta, horizon_theta=theta_h)),
     )
-    assert weights.shape == expected.shape
-    np.testing.assert_array_equal(weights, np.asarray(expected))
+    np.testing.assert_allclose(
+        weights,
+        np.asarray(cro.horizon_weights(THETA, horizon_theta=theta_h)),
+        rtol=0,
+        atol=1e-12,
+    )
     assert np.all((weights >= 0) & (weights <= 1))
+
+
+def test_horizon_theta_from_beam_file():
+    """horizon_max_theta (degrees) becomes horizon_theta (radians)."""
+    cfg = {"beam_file": "beam.npz"}
+    assert pipeline._horizon_theta_from_beam_file(cfg, THETA) is None
+    cfg["horizon_max_theta"] = 80.0
+    assert pipeline._horizon_theta_from_beam_file(cfg, THETA) == np.deg2rad(
+        80.0
+    )
 
 
 def _open_integral(gain_name, theta_h):

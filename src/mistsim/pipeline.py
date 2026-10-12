@@ -347,8 +347,8 @@ def setup_sky_multi_freq(config):
 # ------------------------------------------------------------------
 
 
-def _horizon_from_beam_file(site_cfg, theta):
-    """Horizon weights for a file-based beam.
+def _horizon_theta_from_beam_file(site_cfg, theta):
+    """Horizon colatitude for a file-based beam, or None.
 
     Parameters
     ----------
@@ -357,44 +357,32 @@ def _horizon_from_beam_file(site_cfg, theta):
         (degrees from zenith), the sky is open for theta below that
         value and blocked beyond it, at every azimuth.
     theta : array-like
-        Colatitude axis of the beam file's regular grid, in radians,
-        strictly increasing within [0, pi].
+        Colatitude axis of the beam file's regular grid, checked to be
+        in radians.
 
     Returns
     -------
-    horizon : np.ndarray or None
-        Visible fractions in [0, 1] of shape ``(ntheta, 1)``, from
-        ``croissant.horizon_weights``, or *None* when
-        ``horizon_max_theta`` is not set (croissant then puts the
-        horizon at theta = 90 deg, with the same fractional boundary
-        row).
+    horizon_theta : float or None
+        ``horizon_max_theta`` in radians, for ``mistsim.Beam``'s
+        ``horizon_theta``, or *None* when it is not set (croissant then
+        puts the horizon at theta = 90 deg).
 
     Raises
     ------
     ValueError
-        If *theta* is not in radians, or (from
-        ``croissant.horizon_weights``) is not a strictly increasing
-        grid within [0, pi].
+        If *theta* is not in radians.
 
     Notes
     -----
-    Each row of a gridded beam stands for a cell reaching halfway to
-    its neighbours in theta. On the 1-deg MWSS grid the row at 80 deg
-    covers [79.5, 80.5] deg. A boolean mask snaps the horizon to a
-    cell edge, up to half a row off. With the horizon on a row it
-    keeps that row whole, so the horizon sits half a row too low and
-    a strip of ground is open to the sky. For a sin^2 beam cut at
-    80 deg it misses 4.9 % of the ground the cut adds beyond 90 deg
-    (tests/test_horizon.py). Rows nearer the zenith than the boundary
-    therefore get weight 1, rows beyond it 0, and the boundary row
-    the open share of its cell, linear in theta. This is the
-    fractional edge croissant gives its own default horizon.
-
-    This changes results for configs that set ``horizon_max_theta``.
-    The function used to return a boolean mask, so the boundary row
-    had weight 0 or 1. It now gets 1/2 when the horizon lies on a row
-    and, in general, the open share of its cell.
-
+    croissant builds the weights on the beam's own grid. Rows nearer the
+    zenith than the horizon get weight 1, rows beyond it 0, and the
+    boundary row the open share of its cell, linear in theta, so a
+    horizon on a row (80 deg on the 1-deg MWSS grid, the cell
+    [79.5, 80.5] deg) gives that row 1/2. A boolean ``theta <= theta_h``
+    mask would keep the whole row and open half a row of ground. These
+    are the weights this function used to build with
+    ``croissant.horizon_weights``, on the file's theta, which is the
+    beam's grid, so they agree to round-off.
     """
     theta = np.asarray(theta)
     if theta.max() > np.pi * (1 + 1e-6):
@@ -404,8 +392,7 @@ def _horizon_from_beam_file(site_cfg, theta):
         )
     if "horizon_max_theta" not in site_cfg:
         return None
-    max_theta = np.deg2rad(site_cfg["horizon_max_theta"])
-    return np.asarray(cro.horizon_weights(theta, horizon_theta=max_theta))
+    return float(np.deg2rad(site_cfg["horizon_max_theta"]))
 
 
 def build_beam(site_cfg, sim_freq):
@@ -444,7 +431,7 @@ def build_beam(site_cfg, sim_freq):
             f"(range {beam_freqs[0]}-{beam_freqs[-1]} MHz)"
         )
     g = gain[idx[0]]
-    horizon = _horizon_from_beam_file(site_cfg, d["theta"])
+    horizon_theta = _horizon_theta_from_beam_file(site_cfg, d["theta"])
 
     az_rot = site_cfg.get("beam_az_rot", 0.0)
     tilt = site_cfg.get("beam_tilt", 0.0)
@@ -452,7 +439,7 @@ def build_beam(site_cfg, sim_freq):
         g[None],
         sim_freq,
         sampling="mwss",
-        horizon=horizon,
+        horizon_theta=horizon_theta,
         beam_az_rot=az_rot,
         beam_tilt=tilt,
     )
@@ -506,7 +493,7 @@ def _build_multi_freq_beam(site_cfg, sim_freqs):
             )
         local_indices.append(idx[0])
     g = gain[np.array(local_indices)]
-    horizon = _horizon_from_beam_file(site_cfg, d["theta"])
+    horizon_theta = _horizon_theta_from_beam_file(site_cfg, d["theta"])
 
     az_rot = site_cfg.get("beam_az_rot", 0.0)
     tilt = site_cfg.get("beam_tilt", 0.0)
@@ -514,7 +501,7 @@ def _build_multi_freq_beam(site_cfg, sim_freqs):
         g,
         sim_freqs,
         sampling="mwss",
-        horizon=horizon,
+        horizon_theta=horizon_theta,
         beam_az_rot=az_rot,
         beam_tilt=tilt,
     )
