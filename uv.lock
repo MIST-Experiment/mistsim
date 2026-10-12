@@ -562,7 +562,7 @@ toml = [
 [[package]]
 name = "croissant-sim"
 version = "5.2.1"
-source = { git = "https://github.com/christianhbye/croissant.git?rev=v5.3.0.dev5#e487702350ca6afea36abf07c8910c9307271e8c" }
+source = { git = "https://github.com/christianhbye/croissant.git?rev=v5.3.0.dev6#6c8678e1de2d47f8377dfc0cb1531f5b927b77e6" }
 dependencies = [
     { name = "astropy" },
     { name = "equinox" },
@@ -2030,7 +2030,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "croissant-sim", git = "https://github.com/christianhbye/croissant.git?rev=v5.3.0.dev5" },
+    { name = "croissant-sim", git = "https://github.com/christianhbye/croissant.git?rev=v5.3.0.dev6" },
     { name = "equinox" },
     { name = "jax" },
     { name = "numpy" },
