@@ -1,12 +1,9 @@
-import croissant as cro
 import equinox as eqx
-import jax
 import jax.numpy as jnp
 import pytest
 from astropy.time import Time
 
 import mistsim as ms
-from mistsim.sim import correct_ground_loss
 
 freqs = jnp.linspace(50, 100, 50)
 nside = 16
@@ -90,18 +87,3 @@ def test_sky_alm(beam, sky, vis):
     vis1 = vis
     vis2 = sim2.sim()
     assert jnp.allclose(vis1, vis2)
-
-
-@pytest.mark.parametrize("disable_jit", [True, False])
-@pytest.mark.parametrize("fgnd", [0.0, 0.5, 1.0])
-@pytest.mark.parametrize("Tgnd", [0.0, 100.0, 300.0])
-def test_correct_ground_loss(vis, fgnd, Tgnd, disable_jit):
-    """
-    Check that the correct ground loss function raises a Warning and
-    matches the croissant function
-    """
-    with jax.disable_jit(disable_jit):
-        with pytest.warns(FutureWarning):
-            vc = correct_ground_loss(vis, fgnd, Tgnd)
-        vtrue = cro.simulator.correct_ground_loss(vis, fgnd, Tgnd)
-        assert jnp.allclose(vc, vtrue)
