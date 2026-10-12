@@ -54,9 +54,11 @@ class Simulator(cro.Simulator):
             smaller than or equal to the lmax values of the beam and
             sky models. If None, the minimum of the beam and sky lmax
             values is used.
-        Tgnd : float
-            The ground temperature in Kelvin. Only a constant
-            temperature is supported for now.
+        Tgnd : float or array_like
+            The ground temperature in Kelvin, uniform over the ground: a
+            scalar, or one value per frequency with shape ``(nfreq,)``,
+            such as an emissivity times a physical temperature (passed
+            to croissant's Simulator, which checks the shape).
 
         Raises
         ------
